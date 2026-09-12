@@ -127,7 +127,7 @@ permissions:
 
 jobs:
   static:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@d1f756aacca92fd99a66ba3370f290c41cb36a22 # v0.51.5
+    uses: gokayo43/dev-config/.github/workflows/check.yml@f31fe8292d666b745a8b807ce0301d5ba64c9b35 # v0.55.2
     with:
       build: ${{ inputs.build }}
       affected: ${{ inputs.affected }}
