@@ -312,6 +312,16 @@ export async function dumpOf(
 ): Promise<string> {
   const server = new URL(url);
   const database = databaseIn(url);
+  // Named rather than defaulted to 3306: the server step publishes on the port
+  // the docker daemon assigned and answers with the URL it is on, so every URL
+  // that reaches this carries one. A default here would dump from whatever else
+  // on the runner holds the default port — which on a shared box is a real
+  // server — and call the result this job's schema.
+  if (server.port === "") {
+    throw new Error(
+      `the database URL names no port, so this dump would be taken from whatever holds 3306 on this machine — the calling job passes the URL the server step answered with, which carries the port docker assigned`,
+    );
+  }
   const proc = Bun.spawn(
     [
       "docker",
@@ -324,7 +334,7 @@ export async function dumpOf(
       image,
       client,
       `--host=${server.hostname}`,
-      `--port=${server.port === "" ? "3306" : server.port}`,
+      `--port=${server.port}`,
       `--user=${decodeURIComponent(server.username)}`,
       ...args,
       database,

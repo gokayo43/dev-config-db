@@ -1,4 +1,4 @@
-import { closeSync, openSync } from "node:fs";
+import { closeSync, openSync, readFileSync } from "node:fs";
 
 import { plainly, type Verdict } from "../_lib/annotations.ts";
 
@@ -108,6 +108,41 @@ export function healthUrlFrom(value: string): string {
   return parsed.href;
 }
 
+/**
+ * Whether the process this step started is running, asked of the kernel rather
+ * than of the runtime.
+ *
+ * `Subprocess.exitCode` is set when Bun delivers the child's exit, which is an
+ * event — and a request to something already listening on the health URL comes
+ * back in about a millisecond, long before that event arrives. Measured against
+ * this file's own suite: a start-command of `exit 1` with a stranger on the URL
+ * published `boot: the app answered … after 0.0s`, green, with the exit code
+ * still unread. So the aliveness of the app is read from `/proc` at the moment
+ * its answer is, where it is a fact rather than a notification, and a child Bun
+ * has not reaped yet is a zombie there — `Z`, which is not running.
+ *
+ * Linux only, like `killGroup` beside it: what this gate targets is a
+ * `[self-hosted, linux]` runner.
+ *
+ * The state is read from after the LAST `)`, because the field before it is the
+ * executable's name and a name may hold spaces and parentheses of its own.
+ * `ENOENT` is the process already reaped, which is the same answer as `Z`.
+ */
+function running(pid: number): boolean {
+  let stat: string;
+  try {
+    stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+  } catch {
+    return false;
+  }
+  return (
+    stat
+      .slice(stat.lastIndexOf(")") + 1)
+      .trim()
+      .charAt(0) !== "Z"
+  );
+}
+
 /** Whether the app answered, which is the whole of what 200 here means. */
 async function answers(url: string, within: number): Promise<boolean> {
   try {
@@ -123,6 +158,25 @@ async function answers(url: string, within: number): Promise<boolean> {
 }
 
 export async function bootGate({ root, command, url, log, seconds }: Boot): Promise<Verdict> {
+  // Asked before anything is started, and it is the half of "did the app boot"
+  // that no poll can answer afterwards: a URL already answering is a URL whose
+  // 200 belongs to something this step did not start, and the poll below cannot
+  // tell that from the app coming up. On a fresh cloud VM there was nothing
+  // else on the box; on a shared, persistent runner there is — and the cost of
+  // missing it is not one wrong verdict but a green boot, a probe and twenty
+  // ramp VUs all run against a stranger while the app under grade never ran.
+  //
+  // Refused rather than waited out, because nothing about it improves with
+  // time. The database job allocates the port it polls, so a consumer that
+  // meets this is one whose health-url names a port of its own.
+  if (await answers(url, ATTEMPT_MS)) {
+    return {
+      problems: [
+        `${url} already answers, and this step has started nothing yet — so something else on this machine is serving it, and a 200 from it would be this step reporting a boot that never happened. Leave health-url unset and the job allocates a port for the app, or name one nothing else on the runner holds.`,
+      ],
+    };
+  }
+
   // Opened rather than piped: the app outlives this process — the probe and the
   // ramp run against it in later steps — so nothing here can be holding the
   // read end of its output.
@@ -160,29 +214,44 @@ export async function bootGate({ root, command, url, log, seconds }: Boot): Prom
   };
 
   for (;;) {
-    if (await answers(url, Math.min(ATTEMPT_MS, Math.max(deadline - Date.now(), 1)))) {
-      return {
-        note: `boot: the app answered ${url} after ${((Date.now() - started) / 1000).toFixed(1)}s`,
-        problems: [],
-      };
-    }
-    // Read after the poll rather than before it, so that an app which answered
-    // and then exited is reported as having booted: what this step claims is
-    // that the migrations produced a schema the app starts against.
+    // The answer and the process that owes it, read together: a 200 is this
+    // step's verdict only when the app this step started is alive to have
+    // served it. The health URL is a port on a machine other things also listen
+    // on, so on a shared, persistent runner a stranger already on it turns a
+    // start-command that died into a green boot — and the probe and twenty ramp
+    // VUs are then aimed at the stranger while the app under grade never ran.
     //
-    // Both halves, because a child that died on a signal has NO exit code —
-    // `exitCode` stays null and `signalCode` carries the name. That is not an
-    // exotic case on a runner: it is what the OOM killer does to an app booting
-    // against a schema it cannot hold in memory, and reading only the code
-    // would spend the whole bound and then report a live process.
-    const ended = app.signalCode ?? app.exitCode;
-    if (ended !== null) {
+    // What this narrows: an app that answers and dies in the microseconds
+    // before the line below is read is reported as having exited rather than as
+    // having booted. It is not serving either way, and every step after this
+    // one would have found nothing.
+    const attempt = Math.min(ATTEMPT_MS, Math.max(deadline - Date.now(), 1));
+    const answered = await answers(url, attempt);
+    if (running(app.pid)) {
+      if (answered) {
+        return {
+          note: `boot: the app answered ${url} after ${((Date.now() - started) / 1000).toFixed(1)}s`,
+          problems: [],
+        };
+      }
+    } else {
+      // Gone, so `exited` is a wait on an event already owed rather than on the
+      // app — and it is what fills in the code the diagnostic quotes.
+      //
+      // Both halves of that, because a child that died on a signal has NO exit
+      // code: `exitCode` stays null and `signalCode` carries the name. That is
+      // not an exotic case on a runner — it is what the OOM killer does to an
+      // app booting against a schema it cannot hold in memory — and reading
+      // only the code would name an exit nobody chose.
+      await app.exited;
       const how =
         app.signalCode === null
           ? `exited ${app.exitCode}`
           : `was killed by ${app.signalCode}, so it never chose an exit code`;
       return await failed(
-        `the app ${how} before ${url} answered — its own output is above. A migration set that applies and leaves the app unable to start against the schema it built is what this step is here to catch; a start-command that is wrong is the other reading, and the output says which.`,
+        answered
+          ? `the app ${how} and ${url} answered anyway — so something other than the app this step started is serving that URL, and every step after this one would have run against it. Its own output is above.`
+          : `the app ${how} before ${url} answered — its own output is above. A migration set that applies and leaves the app unable to start against the schema it built is what this step is here to catch; a start-command that is wrong is the other reading, and the output says which.`,
       );
     }
     if (Date.now() >= deadline) {

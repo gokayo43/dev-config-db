@@ -56,6 +56,13 @@ outputs:
       into every later step and a graded repo's own steps run in between — an
       output cannot be rewritten once set.
     value: ${{ steps.server.outputs['database-url'] }}
+  container:
+    description: >-
+      The container this step created, named after the calling job's workspace.
+      Answered whether or not the server came up, because what reads it is the
+      job's own removal step — a composite action has no `post:` of its own, so
+      a container started here outlives the job unless the job takes it down.
+    value: ${{ steps.server.outputs.container }}
 
 runs:
   using: composite

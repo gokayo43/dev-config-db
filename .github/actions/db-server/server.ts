@@ -122,19 +122,20 @@ async function logsOf(name: string): Promise<string> {
  * The loopback port the daemon published this container's 3306 on, read back
  * from docker rather than chosen here.
  *
- * `docker port` answers `127.0.0.1:49154` per mapping, and a container this
- * step created has exactly one — it publishes one container port on one
- * address. The port is the last colon-separated field so that an IPv6 address,
- * which carries colons of its own, is read the same way.
+ * One shape, parsed strictly: the run below publishes one container port on
+ * `127.0.0.1`, so `docker port` answers `127.0.0.1:<port>` and nothing else.
  *
- * Absent means docker had no mapping to give, which is a container that is no
- * longer there to have one — `startServer` says which of the two that is.
+ * Absent means docker had no mapping to give, and there is exactly one way to
+ * be in that state — probed on this daemon: a container is given its mapping
+ * when it starts, whatever the image goes on to listen on (`alpine sleep 30`
+ * answers `127.0.0.1:33621` while Running), and loses it only by being gone
+ * (`no public port '3306/tcp' published`, exit 1). An image serving on another
+ * port is a mapping that answers nothing, which the poll below reports.
  */
 async function publishedPort(name: string): Promise<string | undefined> {
   const asked = await docker(["port", name, "3306/tcp"]);
-  const [mapping] = asked.stdout.trim().split("\n");
-  const port = mapping?.split(":").at(-1)?.trim();
-  return asked.status === 0 && port !== undefined && /^\d+$/u.test(port) ? port : undefined;
+  const published = /^127\.0\.0\.1:(\d+)$/mu.exec(asked.stdout.trim());
+  return asked.status === 0 ? published?.[1] : undefined;
 }
 
 /** The server as this step reaches it: what the calling job declared, on the port docker published. */
@@ -181,15 +182,10 @@ export async function startServer(asked: Server): Promise<Started> {
       "--detach",
       "--name",
       as,
-      // `127.0.0.1::3306` is the `ip::containerPort` form: loopback, and a host
-      // port the daemon picks. Both halves are load-bearing on a shared,
-      // persistent runner. A bare `3306:3306` binds 0.0.0.0, and the DNAT rule
-      // docker installs carries no destination match, so the container answers
-      // on the box's public address whatever the host firewall says — ufw does
-      // not filter the FORWARD path docker installs. A fixed host port is also
-      // single-occupancy: two jobs overlapping on one daemon is the ordinary
-      // case there, and the second to start would die with "port is already
-      // allocated". The assignment is read back below.
+      // The `ip::containerPort` form: loopback, and a host port the daemon
+      // picks. Both halves answer a fact about the runner rather than about
+      // this step — docs/gates/db-server.md, "Why the port is the daemon's".
+      // The assignment is read back below.
       "--publish",
       "127.0.0.1::3306",
       "--env",
@@ -220,15 +216,9 @@ export async function startServer(asked: Server): Promise<Started> {
   });
 
   const published = await publishedPort(as);
-  if (published === undefined) {
-    if (!(await running(as))) return await stopped();
-    return {
-      log: await logsOf(as),
-      problems: [
-        `${image} is running and docker published no loopback port for 3306 — the container's own output is above. This step publishes that port for the daemon to assign and reads the assignment back, so an image serving on another port is one no gate in this job can reach.`,
-      ],
-    };
-  }
+  // No mapping is a container that is gone — `publishedPort` says why that is
+  // the only reading — so this is that diagnosis rather than one of its own.
+  if (published === undefined) return await stopped();
   const reachable = on(url, published);
 
   const deadline = Date.now() + within;

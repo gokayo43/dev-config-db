@@ -1,6 +1,4 @@
-import { appendFile } from "node:fs/promises";
-
-import { entry, inputs, publish, required } from "../_lib/annotations.ts";
+import { entry, inputs, mask, publish, required, stepOutput } from "../_lib/annotations.ts";
 import { startServer } from "./server.ts";
 
 /**
@@ -48,10 +46,24 @@ await entry(async () => {
     "the calling job declares the account and the database every gate after this step uses",
   );
 
+  // The container this step is about to create, answered for before it is
+  // created: the job removes it when the job ends, and a server that came up
+  // and then failed its gate is exactly the run whose container would otherwise
+  // outlive it. A name for a container that was never created costs the removal
+  // step nothing.
+  const container = containerFor(read["workspace"]);
+  await stepOutput("container", container);
+
+  // The password reaches the log through nothing this step writes — and this
+  // step answers with a URL that carries it. Masked before either is published,
+  // because the runner replaces what it has not yet written and not what it
+  // has.
+  mask(decodeURIComponent(new URL(url).password));
+
   const started = await startServer({
     image: read["database-image"],
     url,
-    as: containerFor(read["workspace"]),
+    as: container,
     within: WITHIN,
   });
   await publish(started);
@@ -61,11 +73,5 @@ await entry(async () => {
   // folds a later step's $GITHUB_ENV write into every step after it, so a
   // graded repo's migrator could otherwise name the database its own gates are
   // read from, while a step output cannot be rewritten once set.
-  if (started.url !== undefined) {
-    const output = required(
-      "GITHUB_OUTPUT",
-      "this step answers with the port docker assigned, and the job's later steps read it from there",
-    );
-    await appendFile(output, `database-url=${started.url}\n`);
-  }
+  if (started.url !== undefined) await stepOutput("database-url", started.url);
 });
