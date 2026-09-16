@@ -39,8 +39,7 @@ export async function wrapperDocument(): Promise<Foreign> {
  *
  * Here rather than in the suite that wants it, because reading a workflow is
  * what this module is for and the walk needs the `unknown` this file is already
- * the boundary for. (`wrapper-inputs.test.ts` carries its own copy; collapsing
- * the two is a one-line change once that file is not being edited in parallel.)
+ * the boundary for.
  */
 export function stringsIn(document: unknown): string[] {
   if (typeof document === "string") return [document];

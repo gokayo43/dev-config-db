@@ -76,11 +76,9 @@ that has been improved says so at the line that improved it.
   is an expression a later step cannot rewrite, and the job's last step removes
   the container the server step named — a composite action has no `post:`, so a
   server nobody takes down outlives the job on a runner that is not thrown
-  away. It installs the graded repo's dependencies through **dev-config's own
-  `install` action** rather than a `bun install` of its own, which is what lets
-  one key serve both jobs: the `git-ssh-key` secret this workflow declares is
-  handed to that action here and to their check.yml in the call above, and to
-  nothing else — writing, using and removing it is theirs. `#2`, `#3`,
+  away. It installs through **dev-config's own `install` action** rather than a
+  `bun install` of its own, which is what lets one key serve both jobs —
+  `README.md`, "A private git dependency". `#2`, `#3`,
   `#5` and the upgrade path are shipped; `#4`'s backfill half and `#6` land as
   further steps of it, each with the composite action that runs it, its own
   suite, and its page under `docs/gates/` — the shape dev-config's "Adding a

@@ -184,6 +184,8 @@ stays refused below rather than standing in for it, and
 question to ask — [docs/gates/db-server.md](docs/gates/db-server.md) is what is
 done with it.
 
+### A private git dependency
+
 One value a consumer passes is not an input at all. **`git-ssh-key`** is an
 optional secret, declared here because dev-config declares one: it is a deploy
 key that may read a private git repository the consumer's manifest names as a
@@ -204,6 +206,15 @@ jobs:
     secrets:
       git-ssh-key: ${{ secrets.MY_DEPLOY_KEY }}
 ```
+
+**Mapped explicitly, because `secrets: inherit` cannot carry this one.** A
+stored secret's name may hold only letters, digits and underscores, so no
+repository or organization secret can be called `git-ssh-key` at all — and
+`inherit` passes what the caller has stored, under the names it is stored
+under. A call that inherits gets an empty key in both jobs, which is the state
+of a repo with no private dependency: nothing fails, and the install that needed
+the key does not have it. The name is dev-config's, which is why it is spelled
+that way on this side of the mapping.
 
 `tests/wrapper-inputs.test.ts` is what keeps every list on this page honest: it
 reads the dev-config this repo installs — the same commit the workflows call —

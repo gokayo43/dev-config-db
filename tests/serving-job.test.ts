@@ -239,14 +239,27 @@ test("the caller reads the interpreter and the path before the graded repo runs"
  * there and nowhere else.
  */
 test("the database job installs through dev-config's install, carrying the key", () => {
-  const step = jobSteps().find((each) => (textAt(each, "uses") ?? "").includes(INSTALL));
-  const uses = textAt(step, "uses") ?? "";
+  // `stepUsing` rather than a find of this test's own: a job that has stopped
+  // installing through that action fails by name here, rather than as a
+  // malformed pin belonging to a step that is not there.
+  const step = stepUsing(INSTALL);
 
-  expect(uses).toMatch(/^gokayo43\/dev-config\/\.github\/actions\/install@[0-9a-f]{40}$/u);
+  expect(textAt(step, "uses")).toMatch(
+    /^gokayo43\/dev-config\/\.github\/actions\/install@[0-9a-f]{40}$/u,
+  );
+  // The key and nothing else: what makes it safe is that it is written, used
+  // and removed inside that action's own shell, so this job's part is to hand
+  // it there and to hold nothing back for itself.
   expect(mapAt(step, "with")).toEqual({ "git-ssh-key": "${{ secrets['git-ssh-key'] }}" });
-  // And nothing in this job installs the other way any more: two installs are
-  // two answers to which dependencies this job graded, and the bare one takes
-  // no key.
+});
+
+/**
+ * And one install, not two. A `bun install` left in a `run:` block beside the
+ * action is a second answer to which dependencies this job graded — and it is
+ * the answer that takes no key, so a consumer with a private dependency would
+ * meet exactly the failure the action is here to end.
+ */
+test("nothing in the database job installs the other way", () => {
   expect(jobSteps().filter((each) => (textAt(each, "run") ?? "").includes("bun install"))).toEqual(
     [],
   );
