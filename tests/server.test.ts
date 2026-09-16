@@ -2,8 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { startServer } from "../.github/actions/db-server/server.ts";
 
-import { freePort } from "./app.ts";
-import { PRODUCTS, emptyDatabase, noteOf, query } from "./servers.ts";
+import { DEFAULT, PRODUCTS, emptyDatabase, noteOf, query, server } from "./servers.ts";
 import { serviceImages } from "./workflow.ts";
 
 /**
@@ -31,6 +30,9 @@ if (NOT_A_SERVER === undefined) {
 /** A bound short enough to be a test and long enough that a slow box does not decide the verdict. */
 const BRIEF = 10_000;
 
+/** What a caller declares: the account, the password and the database, and no port — docker assigns that. */
+const SERVER = "mysql://root:db-gate@127.0.0.1/app";
+
 /** A container name of this file's own, so a case never reclaims the suite's shared servers. */
 function named(what: string): string {
   return `dev-config-db-case-${process.pid}-${what}`;
@@ -55,12 +57,19 @@ for (const product of PRODUCTS) {
      */
     test("the server the caller pinned comes up, answers, and says which server it is", async () => {
       const note = await noteOf(product);
+      const { port } = new URL(await server(product));
 
-      expect(note).toContain("came up and answered as");
+      expect(note).toContain("came up on port");
+      expect(note).toContain("and answered as");
       // And it is this product's server rather than the other one. A suite that
       // ran both legs against one server would pass every case in this repo
       // while certifying half of what it claims.
       expect(note).toContain(product.version);
+      // The port every other suite here connects on is the one docker assigned,
+      // named in the line the step leaves behind — a step that answered with the
+      // declaration it was handed would carry no port at all.
+      expect(port).not.toBe("");
+      expect(note).toContain(`came up on port ${port}`);
     }, 180_000);
 
     test("a database made on it is the database the gates then read", async () => {
@@ -85,7 +94,7 @@ for (const product of PRODUCTS) {
       try {
         const verdict = await startServer({
           image: product.image,
-          url: `mysql://root:@127.0.0.1:${await freePort()}/app`,
+          url: "mysql://root:@127.0.0.1/app",
           as,
           within: BRIEF,
         });
@@ -115,7 +124,7 @@ test("a server that never answers is refused at the bound, not at the job's time
     const started = Date.now();
     const verdict = await startServer({
       image: NOT_A_SERVER,
-      url: `mysql://root:db-gate@127.0.0.1:${await freePort()}/app`,
+      url: SERVER,
       as,
       within: BRIEF,
     });
@@ -138,7 +147,7 @@ test("a server that never answers is refused at the bound, not at the job's time
  */
 test("a container left behind by a previous run is reclaimed rather than collided with", async () => {
   const as = named("reclaimed");
-  const url = `mysql://root:db-gate@127.0.0.1:${await freePort()}/app`;
+  const url = SERVER;
   try {
     // Twice over the image that never answers, because what is under test is the
     // reclaim rather than the server: the second start meets a container of that
@@ -157,7 +166,47 @@ test("a container left behind by a previous run is reclaimed rather than collide
 }, 120_000);
 
 /**
- * The three wiring faults, which are refused before docker is asked anything: a
+ * The collision the fixed host port was: two jobs of two consumers, or two legs
+ * of one matrix, land on one docker daemon on a shared runner and start their
+ * servers at the same moment from the same declaration.
+ *
+ * The wrong implementation is the one this replaces — publish the port the URL
+ * names — and it fails here with docker's own "port is already allocated" on
+ * whichever container lost, which a consumer reads as their own call being
+ * wrong. Both are started at once rather than in sequence, because a sequence
+ * would pass against a step that simply re-used a port the first container had
+ * already released.
+ */
+test("two servers from one declaration are two ports, so neither job is the other's", async () => {
+  const names = [named("beside-a"), named("beside-b")];
+  try {
+    const [first, second] = await Promise.all(
+      names.map(async (as) =>
+        startServer({ image: DEFAULT.image, url: SERVER, as, within: 120_000 }),
+      ),
+    );
+
+    expect(`${first?.problems.join(" ")}${second?.problems.join(" ")}`).toBe("");
+    const ports = [first?.url, second?.url].map((url) =>
+      url === undefined ? "" : new URL(url).port,
+    );
+    // Assigned, and assigned apart: a step answering with the declaration it was
+    // handed would show two empty strings here, and one answering with a
+    // constant would show one port twice.
+    expect(ports.filter((port) => port === "")).toEqual([]);
+    expect(new Set(ports).size).toBe(2);
+    // And each URL reaches a server rather than merely reading well: the port
+    // is the one thing every later step of a consumer's job depends on.
+    for (const url of [first?.url ?? "", second?.url ?? ""]) {
+      expect(await query(url, "select 1 as one")).toHaveLength(1);
+    }
+  } finally {
+    for (const as of names) await removed(as);
+  }
+}, 300_000);
+
+/**
+ * The four wiring faults, which are refused before docker is asked anything: a
  * composite action maps an input nobody passed to the empty string, and the
  * other two name a server this step is not the one starting. Each costs nothing
  * to ask and saves the whole bound to answer.
@@ -165,7 +214,7 @@ test("a container left behind by a previous run is reclaimed rather than collide
 test("an empty image is refused as the wiring fault it is", async () => {
   const verdict = await startServer({
     image: "",
-    url: "mysql://root:db-gate@127.0.0.1:3306/app",
+    url: SERVER,
     as: named("unused"),
     within: BRIEF,
   });
@@ -174,10 +223,24 @@ test("an empty image is refused as the wiring fault it is", async () => {
   expect(verdict.problems[0]).toContain("database-image input is empty");
 });
 
+test("a URL naming a port is refused, because the port is not the caller's to name", async () => {
+  const verdict = await startServer({
+    image: "mariadb:11.4",
+    url: "mysql://root:db-gate@127.0.0.1:3306/app",
+    as: named("unused"),
+    within: BRIEF,
+  });
+
+  expect(verdict.problems).toHaveLength(1);
+  expect(verdict.problems[0]).toContain("does not choose one");
+  // And nothing was started to be reached on it.
+  expect(verdict.url).toBeUndefined();
+});
+
 test("a URL naming a host this step does not publish on is refused", async () => {
   const verdict = await startServer({
     image: "mariadb:11.4",
-    url: "mysql://root:db-gate@db.internal:3306/app",
+    url: "mysql://root:db-gate@db.internal/app",
     as: named("unused"),
     within: BRIEF,
   });
@@ -189,7 +252,7 @@ test("a URL naming a host this step does not publish on is refused", async () =>
 test("a URL naming an account the image never creates is refused", async () => {
   const verdict = await startServer({
     image: "mariadb:11.4",
-    url: "mysql://app:db-gate@127.0.0.1:3306/app",
+    url: "mysql://app:db-gate@127.0.0.1/app",
     as: named("unused"),
     within: BRIEF,
   });

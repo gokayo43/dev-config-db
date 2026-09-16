@@ -1,10 +1,10 @@
+// oxlint-disable-next-line no-restricted-imports -- a case's slice of the shared server is a database this module made for it, and the case holds its URL rather than a disposable; dropping it here is what keeps one killed run from leaving a database per case on a server the whole run shares
 import { afterEach } from "bun:test";
 
 import { isList } from "../.github/actions/_lib/foreign.ts";
 import { connection } from "../.github/actions/db-replay/database.ts";
 import { startServer } from "../.github/actions/db-server/server.ts";
 
-import { freePort } from "./app.ts";
 import { defaultServerImage, root } from "./workflow.ts";
 
 /**
@@ -113,21 +113,23 @@ function containerFor({ name }: Product): string {
 
 /** A server of this product, up and answering, and the URL of the database it came up with. */
 async function started(product: Product): Promise<string> {
-  // A port nothing is on rather than the 3306 the shipped job publishes: two
-  // products run at once here, and this box may already be running a server of
-  // its own.
-  const url = `mysql://root:${PASSWORD}@127.0.0.1:${await freePort()}/${FIRST}`;
+  // No port in it: the shipped step has docker assign one and answers with the
+  // URL on that port, which is how two products run here at once — and how two
+  // of a consumer's jobs share one daemon.
   const verdict = await startServer({
     image: product.image,
-    url,
+    url: `mysql://root:${PASSWORD}@127.0.0.1/${FIRST}`,
     as: containerFor(product),
     within: 120_000,
   });
   if (verdict.problems.length > 0) {
     throw new Error(`${product.name} never came up: ${verdict.problems.join(" ")}`);
   }
+  if (verdict.url === undefined) {
+    throw new Error(`${product.name} came up and the step named no port for it`);
+  }
   notes.set(product.name, verdict.note ?? "");
-  return url;
+  return verdict.url;
 }
 
 /** What the shipped step said about the server it started, kept for the one case that grades it. */

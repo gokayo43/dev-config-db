@@ -210,7 +210,7 @@ export function inputs<const Names extends readonly string[]>(
     if (value === undefined) throw new Error(`${variable} is not set — the action must pass it`);
     return [name, value];
   });
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fromEntries answers a string-keyed record; that its keys are exactly `names` is what the signature promises and what no inference can express
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- fromEntries answers a string-keyed record; that its keys are exactly `names` is what the signature promises and what no inference can express
   return Object.fromEntries(read) as Record<Names[number], string>;
 }
 
