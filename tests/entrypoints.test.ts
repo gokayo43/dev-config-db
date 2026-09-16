@@ -25,13 +25,13 @@ const SUMMARY = join(import.meta.dir, "k6-summary.json");
 
 /** A case per entry point, and the test below fails when the tree grows one this file has not been told about. */
 const CASES = {
-  // A URL nothing is listening on and an image that is never reached: the step
+  // An account no image creates and an image that is never reached: the step
   // refuses the account before it asks docker anything, which is enough to prove
   // the process ends.
   "db-server/server.main.ts": async () => ({
     INPUT_DATABASE_IMAGE: "mariadb:11.4",
     INPUT_WORKSPACE: await materialise({}),
-    DATABASE_URL: "mysql://app:db-gate@127.0.0.1:13306/app",
+    DATABASE_URL: "mysql://app:db-gate@127.0.0.1/app",
   }),
 
   "db-replay/replay.main.ts": async () => ({

@@ -28,8 +28,17 @@ the term says why.
 ## Boot
 
 `start-command` is how a repo starts its app and `health-url` is what this polls
-until it answers 200 — the two inputs a repo has to write, since everything else
-here is the same for every repo.
+until it answers 200 — the two inputs a repo writes when its app is not started
+and reached the way the defaults assume, since everything else here is the same
+for every repo.
+
+Both default to empty in the call and take their real value in the database job:
+`bun run start`, and `http://localhost:${PORT}/api/health` on the port that job
+allocated for the app. `PORT` is the platform convention, so an app that honours
+it needs neither input; an app that ignores it writes both. The port is
+allocated rather than fixed because the runner is a shared, persistent machine —
+README's "Where it runs" is the argument, and it is also why neither default
+could be declared as the input's own.
 
 A health route answers only once the process is up and a query has
 round-tripped, so a migration that applies and leaves the app unable to run
@@ -279,15 +288,18 @@ one with `database: none` fails the call rather than being ignored — a repo th
 has written out the routes it wants ramped, or the reasons a route cannot be, has
 said plainly that it expects a ramp.
 
-`start-command` and `health-url` are the two that cannot be asked the way the
-others are. A `workflow_call` input cannot be asked whether the caller passed it
-— `github.event.inputs` is not populated for one — so "the caller passed this" is
-spelled "the value is non-empty", which works for every input defaulting to `""`
-and cannot work for two carrying a value. They are compared with their declared
-defaults instead, and the suite holds the guard's copy of those defaults to what
-this workflow declares. dev-config#66 is the same two inputs going unrefused
-there, where the guard tests for emptiness alone; what is left uncovered here is
-one caller, named below.
+A `workflow_call` input cannot be asked whether the caller passed it —
+`github.event.inputs` is not populated for one — so "the caller passed this" is
+spelled "the value is non-empty". That works for every input defaulting to `""`
+and cannot work for one carrying a value, which is why `start-command` and
+`health-url` carry none: their real defaults live in the job, where the port in
+`health-url`'s could live anyway.
+
+Two inputs still carry a value, for reasons of their own — `database-image`, so
+that a consumer running the certified server writes nothing, and `upgrade-gate`,
+which is a boolean and has no empty spelling. Those are compared with their
+declared defaults instead, and the suite holds the guard's copy of each to what
+this workflow declares. What that leaves uncovered is one caller, named below.
 
 ## Evidence
 
@@ -343,10 +355,10 @@ gets trusted for things it never checked.
 - **A second program in the repo.** The floor covers the program
   `start-command` boots and only that one: another app in the same repo serves
   its own routes, has no instrument, and appears in no route table.
-- **A caller who passes `start-command` or `health-url` as exactly their
+- **A caller who passes `database-image` or `upgrade-gate` as exactly their
   declared defaults with `database: none`.** That value is indistinguishable
-  from the value a caller who wrote nothing gets, so it is ignored in silence
-  the way dev-config#66 describes. Everything else aimed at this job is refused.
+  from the value a caller who wrote nothing gets, so it is ignored in silence.
+  Everything else aimed at this job is refused.
 - **Anything about racing writers.** The ramp puts twenty virtual users on the
   app at once, and nothing here asserts anything about what happens when two of
   them meet in one row. That is a repo's own probe or its own suite, not this.

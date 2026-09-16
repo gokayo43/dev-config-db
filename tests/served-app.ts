@@ -16,7 +16,7 @@
  * own, one that accepts connections and never answers, and one that serves
  * everything except the instrument.
  */
-import { ENDPOINT, EVERY_METHOD, type Served } from "@gokayo43/dev-config/route-log.ts";
+import { ENDPOINT, EVERY_METHOD, type Served } from "@gokayo43/dev-config/route-log";
 
 const port = Number(process.argv[2]);
 const mode = Bun.env["APP_MODE"] ?? "serving";

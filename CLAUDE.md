@@ -68,9 +68,12 @@ that has been improved says so at the line that improved it.
   `database-image` input and dev-config's pin gate refuses an expression in
   `services` (dev-config#68); `docs/gates/db-server.md` carries the argument and
   what it costs. Every gate step
-  in it is handed the database and the interpreter by a step that reads them at
-  the top of that job, before a line of the graded repo's own code has run, and
-  the search path too wherever the step resolves a program by name. `#2`, `#3`,
+  in it is handed the interpreter by a step that reads it at the top of that
+  job, before a line of the graded repo's own code has run, the search path too
+  wherever the step resolves a program by name, and the database as the server
+  step's own output — docker assigns the port, so that value is one step later
+  and still earlier than anything the graded repo runs. Every one of the three
+  is an expression a later step cannot rewrite. `#2`, `#3`,
   `#5` and the upgrade path are shipped; `#4`'s backfill half and `#6` land as
   further steps of it, each with the composite action that runs it, its own
   suite, and its page under `docs/gates/` — the shape dev-config's "Adding a
@@ -137,7 +140,9 @@ that has been improved says so at the line that improved it.
   relationship between two commits rather than a tree.
   `server.test.ts` grades the step that replaced the service container, which is
   the one piece of wiring the runner used to guarantee: a server that never
-  answers, one that came up and died, and a container a killed run left behind.
+  answers, one that came up and died, a container a killed run left behind, and
+  two started at once from one declaration — which is what a fixed host port
+  cost and what the daemon-assigned one buys.
   `entrypoints.test.ts` is the lane that runs what GitHub runs: every
   `*.main.ts` as a process, under a wall clock, asserting it **ends** — the
   property no in-process test can see, and the one a gate that starts a
@@ -229,9 +234,11 @@ bun test
 
 ## Adoption
 
-Neither consumer calls this workflow yet: `wmstcs` is a pnpm/Node repo and
-`nfp-elysia` has no CI workflow at all, so both need the fleet scaffold before
-the wrapper is worth pointing at. Two things in dev-config's repo contract
+`wmstcs` calls this workflow; `nfp-elysia` has no CI workflow at all yet and
+needs the fleet scaffold before the wrapper is worth pointing at. A consumer
+also needs a runner carrying `self-hosted` and `linux`, or its jobs queue
+rather than fail — `README.md`'s "Where it runs" is what a runner has to
+provide. Two things in dev-config's repo contract
 refuse a consumer of this workflow on facts that are about dev-config's own
 Postgres job rather than about the repo —
 [dev-config#65](https://github.com/gokayo43/dev-config/issues/65) carries both,
