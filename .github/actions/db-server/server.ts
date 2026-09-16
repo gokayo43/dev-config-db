@@ -24,12 +24,21 @@ const ASK_EVERY = 500;
 export interface Server {
   /** The image, pinned by digest, that the calling repo declared. */
   readonly image: string;
-  /** The database the gates then use, which is also where this reads the port, the account and the database name. */
+  /** The account, the password and the database the calling job declared — and no port, which is the daemon's to pick. */
   readonly url: string;
   /** The container to run it as, reclaimed before it is created. */
   readonly as: string;
   /** How long the server has, in milliseconds, before this step says it never came up. */
   readonly within: number;
+}
+
+/** The verdict, plus the server as every gate after this step reaches it. */
+export interface Started extends Verdict {
+  /**
+   * What the calling job declared, on the port docker published it on — absent
+   * on every verdict that has no server behind it.
+   */
+  readonly url?: string;
 }
 
 /** One docker command, and everything it said. */
@@ -51,17 +60,18 @@ async function docker(
 }
 
 /**
- * What the account, the port and the database name are read from, and the whole
- * of what this step is allowed to be asked for.
+ * What the account and the database name are read from, and the whole of what
+ * this step is allowed to be asked for.
  *
  * A composite action maps a missing input to the empty string, so `required:
- * true` in action.yml is a promise nothing enforces at runtime; and the two
+ * true` in action.yml is a promise nothing enforces at runtime; and the three
  * facts below are not requirements this step could satisfy by trying harder.
  * The image's entrypoint initialises exactly one account from the password it is
- * given, and a container's port is published on the loopback address of the
- * machine the job runs on — so a URL naming another user, or another host, names
- * a server this step is not the one starting. check.yml passes neither; a caller
- * running the action directly is who these are for.
+ * given, a container's port is published on the loopback address of the machine
+ * the job runs on, and which loopback port that is belongs to the docker daemon
+ * — so a URL naming another user, another host, or a port at all names a server
+ * this step is not the one starting. check.yml passes none of the three; a
+ * caller running the action directly is who they are for.
  */
 function wiring({ image, url }: Server): string[] {
   if (image.trim() === "") {
@@ -71,6 +81,11 @@ function wiring({ image, url }: Server): string[] {
   }
   const server = new URL(url);
   const problems: string[] = [];
+  if (server.port !== "") {
+    problems.push(
+      `database-url names the port ${server.port}, and this step does not choose one — docker publishes the server on a loopback port of its own, which this step reads back and answers with. A port written here is a port this server is not on.`,
+    );
+  }
   if (server.hostname !== "127.0.0.1") {
     problems.push(
       `database-url names ${server.hostname}, and this step publishes the server it starts on 127.0.0.1 — a host it does not publish on is a server somebody else is running.`,
@@ -104,6 +119,32 @@ async function logsOf(name: string): Promise<string> {
 }
 
 /**
+ * The loopback port the daemon published this container's 3306 on, read back
+ * from docker rather than chosen here.
+ *
+ * `docker port` answers `127.0.0.1:49154` per mapping, and a container this
+ * step created has exactly one — it publishes one container port on one
+ * address. The port is the last colon-separated field so that an IPv6 address,
+ * which carries colons of its own, is read the same way.
+ *
+ * Absent means docker had no mapping to give, which is a container that is no
+ * longer there to have one — `startServer` says which of the two that is.
+ */
+async function publishedPort(name: string): Promise<string | undefined> {
+  const asked = await docker(["port", name, "3306/tcp"]);
+  const [mapping] = asked.stdout.trim().split("\n");
+  const port = mapping?.split(":").at(-1)?.trim();
+  return asked.status === 0 && port !== undefined && /^\d+$/u.test(port) ? port : undefined;
+}
+
+/** The server as this step reaches it: what the calling job declared, on the port docker published. */
+function on(url: string, port: string): string {
+  const server = new URL(url);
+  server.port = port;
+  return server.href;
+}
+
+/**
  * The server, up and answering a query.
  *
  * A query rather than a ping through the image's own client, and that is what
@@ -117,13 +158,12 @@ async function logsOf(name: string): Promise<string> {
  * that — and a query proves the account and the database the gates were handed
  * are the ones this container came up with, which a ping does not.
  */
-export async function startServer(asked: Server): Promise<Verdict> {
+export async function startServer(asked: Server): Promise<Started> {
   const problems = wiring(asked);
   if (problems.length > 0) return { problems };
 
   const { image, url, as, within } = asked;
   const server = new URL(url);
-  const port = server.port === "" ? "3306" : server.port;
   // Reclaimed rather than assumed absent: a run killed outright leaves the
   // container behind, and the next run derives the same name.
   await docker(["rm", "--force", as]);
@@ -141,8 +181,17 @@ export async function startServer(asked: Server): Promise<Verdict> {
       "--detach",
       "--name",
       as,
+      // `127.0.0.1::3306` is the `ip::containerPort` form: loopback, and a host
+      // port the daemon picks. Both halves are load-bearing on a shared,
+      // persistent runner. A bare `3306:3306` binds 0.0.0.0, and the DNAT rule
+      // docker installs carries no destination match, so the container answers
+      // on the box's public address whatever the host firewall says — ufw does
+      // not filter the FORWARD path docker installs. A fixed host port is also
+      // single-occupancy: two jobs overlapping on one daemon is the ordinary
+      // case there, and the second to start would die with "port is already
+      // allocated". The assignment is read back below.
       "--publish",
-      `127.0.0.1:${port}:3306`,
+      "127.0.0.1::3306",
       "--env",
       "MYSQL_ROOT_PASSWORD",
       "--env",
@@ -162,21 +211,38 @@ export async function startServer(asked: Server): Promise<Verdict> {
     };
   }
 
+  /** The container gone before it served, which is the one diagnosis two paths below share. */
+  const stopped = async (): Promise<Started> => ({
+    log: await logsOf(as),
+    problems: [
+      `${image} started and then stopped — the server's own output is above. The image the calling repo pinned has to be one that runs a MySQL-family server on 3306 with the account this job's database-url names.`,
+    ],
+  });
+
+  const published = await publishedPort(as);
+  if (published === undefined) {
+    if (!(await running(as))) return await stopped();
+    return {
+      log: await logsOf(as),
+      problems: [
+        `${image} is running and docker published no loopback port for 3306 — the container's own output is above. This step publishes that port for the daemon to assign and reads the assignment back, so an image serving on another port is one no gate in this job can reach.`,
+      ],
+    };
+  }
+  const reachable = on(url, published);
+
   const deadline = Date.now() + within;
   for (;;) {
     try {
-      const version = await versionOf(url);
-      return { note: `server: ${image} came up and answered as ${version}`, problems: [] };
+      const version = await versionOf(reachable);
+      return {
+        note: `server: ${image} came up on port ${published} and answered as ${version}`,
+        problems: [],
+        url: reachable,
+      };
     } catch (refused) {
       const why = refused instanceof Error ? refused.message : String(refused);
-      if (!(await running(as))) {
-        return {
-          log: await logsOf(as),
-          problems: [
-            `${image} started and then stopped — the server's own output is above. The image the calling repo pinned has to be one that runs a MySQL-family server on 3306 with the account this job's database-url names.`,
-          ],
-        };
-      }
+      if (!(await running(as))) return await stopped();
       if (Date.now() > deadline) {
         return {
           log: await logsOf(as),
