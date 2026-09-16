@@ -184,10 +184,43 @@ stays refused below rather than standing in for it, and
 question to ask — [docs/gates/db-server.md](docs/gates/db-server.md) is what is
 done with it.
 
+### A private git dependency
+
+One value a consumer passes is not an input at all. **`git-ssh-key`** is an
+optional secret, declared here because dev-config declares one: it is a deploy
+key that may read a private git repository the consumer's manifest names as a
+dependency. Both installs in this workflow take it — theirs in the `static` job
+and this workflow's own database job, which installs through the same action of
+theirs — and nothing here reads it or writes it anywhere. A consumer with no
+private dependency passes none, which is also every fork pull request, since a
+fork carries no secrets: both jobs then install exactly as they would have
+before it existed. What the key is for, and what the action does with it, is
+[dev-config's README, "A private git dependency"](https://github.com/gokayo43/dev-config#a-private-git-dependency).
+
+```yaml
+jobs:
+  check:
+    uses: gokayo43/dev-config-db/.github/workflows/check.yml@<commit sha> # <release tag>
+    with:
+      database: external
+    secrets:
+      git-ssh-key: ${{ secrets.MY_DEPLOY_KEY }}
+```
+
+**Mapped explicitly, because `secrets: inherit` cannot carry this one.** A
+stored secret's name may hold only letters, digits and underscores, so no
+repository or organization secret can be called `git-ssh-key` at all — and
+`inherit` passes what the caller has stored, under the names it is stored
+under. A call that inherits gets an empty key in both jobs, which is the state
+of a repo with no private dependency: nothing fails, and the install that needed
+the key does not have it. The name is dev-config's, which is why it is spelled
+that way on this side of the mapping.
+
 `tests/wrapper-inputs.test.ts` is what keeps every list on this page honest: it
 reads the dev-config this repo installs — the same commit the workflows call —
 and fails on a type or default of this wrapper's own, on an input declared that
-nothing reads, and on a name this page has stopped accounting for.
+nothing reads, on a secret forwarded that they do not declare, and on a name
+this page has stopped accounting for.
 
 Every other input dev-config's `check.yml` declares is refused here rather than
 forwarded: `semantic-fixtures`, `timestamp-allowlist`, `backfill-seed`,

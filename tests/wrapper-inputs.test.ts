@@ -2,15 +2,41 @@ import { expect, test } from "bun:test";
 
 import { isForeign, isList, mapAt, textAt } from "../.github/actions/_lib/foreign.ts";
 
-import { root, serviceImages, SERVER_IMAGE, WRAPPER } from "./workflow.ts";
+import { root, serviceImages, SERVER_IMAGE, stringsIn, WRAPPER } from "./workflow.ts";
 
 const CHECK_CALL = /^gokayo43\/dev-config\/\.github\/workflows\/check\.yml@([0-9a-f]{40})$/;
 
 /** This repo's own action, which the wrapper reaches the only way a called workflow can. */
 const OWN_ACTION = /^gokayo43\/dev-config-db\/\.github\/actions\/[\w-]+@([0-9a-f]{40})$/;
 
-/** `${{ inputs.build }}` and `${{ inputs['test-network'] }}` are one reference written two ways. */
-const FORWARD = /^\$\{\{\s*inputs(?:\.([\w-]+)|\[(['"])([^'"]+)\2\])\s*\}\}$/;
+/** The one action of dev-config's this wrapper runs itself: the install that takes the consumer's key. */
+const INSTALL = /^gokayo43\/dev-config\/\.github\/actions\/install@([0-9a-f]{40})$/;
+
+/**
+ * The two contexts a caller's value reaches a called workflow through, which
+ * GitHub declares, passes and reads the same way: `with:` under
+ * `workflow_call.inputs`, `secrets:` under `workflow_call.secrets`, one word
+ * apart in every expression. Every rule below that is about the passing rather
+ * than about the value is asked of both, from one implementation.
+ */
+const KINDS = [
+  { kind: "inputs", one: "input" },
+  { kind: "secrets", one: "secret" },
+] as const;
+
+type Kind = (typeof KINDS)[number]["kind"];
+
+/**
+ * `${{ inputs.build }}`, `${{ inputs['test-network'] }}` and
+ * `${{ secrets['git-ssh-key'] }}` are one reference written three ways: the
+ * context, and a dotted or a bracketed name.
+ */
+function forwardOf(kind: Kind): RegExp {
+  return new RegExp(
+    `^\\$\\{\\{\\s*${kind}(?:\\.([\\w-]+)|\\[(['"])([^'"]+)\\2\\])\\s*\\}\\}$`,
+    "u",
+  );
+}
 
 /** The spec that installs dev-config, which has to name the commit the workflows call. */
 const INSTALLS = /"@gokayo43\/dev-config": "github:gokayo43\/dev-config#([0-9a-f]{40})"/;
@@ -56,6 +82,26 @@ const DIGEST = /@sha256:[0-9a-f]{64}$/;
 type Argument = string | boolean;
 
 /**
+ * What a `workflow_call` says about one value it takes, in either context.
+ *
+ * Every field is one kind's and optional: an input carries a `type` and a
+ * `default`, a secret carries `required`, and `GRADED` below is where each
+ * kind's are named — a declaration graded on a field its kind does not have is
+ * a rule that passes on everything.
+ */
+interface Declaration {
+  readonly type?: string;
+  readonly default?: Argument;
+  readonly required?: boolean;
+}
+
+/** What "declared the same way dev-config declares it" means, per context. */
+const GRADED = {
+  inputs: ["type", "default"],
+  secrets: ["required"],
+} as const satisfies Readonly<Record<Kind, readonly (keyof Declaration)[]>>;
+
+/**
  * A workflow as the questions below read one: the keys they name and no others,
  * each optional because a file that has stopped carrying one is exactly what
  * they are here to catch.
@@ -67,14 +113,17 @@ type Argument = string | boolean;
  */
 interface Workflow {
   readonly on?: {
-    readonly workflow_call?: {
-      readonly inputs?: Readonly<
-        Record<string, { readonly type?: string; readonly default?: Argument }>
-      >;
-    };
+    readonly workflow_call?: Readonly<Partial<Record<Kind, Readonly<Record<string, Declaration>>>>>;
   };
   readonly jobs?: Readonly<
-    Record<string, { readonly uses?: string; readonly with?: Readonly<Record<string, Argument>> }>
+    Record<
+      string,
+      {
+        readonly uses?: string;
+        readonly with?: Readonly<Record<string, Argument>>;
+        readonly secrets?: Readonly<Record<string, Argument>>;
+      }
+    >
   >;
 }
 
@@ -119,10 +168,9 @@ function captured(value: string | undefined, what: string): string {
   return value;
 }
 
-function inputsOf({
-  typed,
-}: Read): Readonly<Record<string, { readonly type?: string; readonly default?: Argument }>> {
-  return typed.on?.workflow_call?.inputs ?? {};
+/** What a workflow declares under one of the two contexts, by name. */
+function declared(read: Read, kind: Kind): Readonly<Record<string, Declaration>> {
+  return read.typed.on?.workflow_call?.[kind] ?? {};
 }
 
 /**
@@ -134,7 +182,10 @@ function inputsOf({
 function call(
   { typed }: Read,
   path: string,
-): { readonly uses: string; readonly with: Readonly<Record<string, Argument>> } {
+): {
+  readonly uses: string;
+  readonly passed: Readonly<Record<Kind, Readonly<Record<string, Argument>>>>;
+} {
   const jobs = Object.values(typed.jobs ?? {}).filter(
     ({ uses }) => uses !== undefined && CHECK_CALL.test(uses),
   );
@@ -144,42 +195,56 @@ function call(
       `${path} must have exactly one job calling dev-config's check.yml at a pinned commit, and has ${jobs.length}`,
     );
   }
-  return { uses: job.uses, with: job.with ?? {} };
+  return {
+    uses: job.uses,
+    passed: { inputs: job.with ?? {}, secrets: job.secrets ?? {} },
+  };
 }
 
-/** Whether the value written beside an input name hands a caller's input on rather than deciding it here. */
-function forwards(value: Argument): value is string {
-  return typeof value === "string" && FORWARD.test(value);
+/** Every value the call writes beside a name in one of the two contexts. */
+function passes(read: Read, path: string, kind: Kind): (readonly [string, Argument])[] {
+  return Object.entries(call(read, path).passed[kind]);
 }
 
-/** The inputs the call hands on, each with the name it was read under. */
-function forwarded(read: Read, path: string): (readonly [string, string])[] {
-  return Object.entries(call(read, path).with).flatMap(([key, value]) => {
-    if (!forwards(value)) return [];
-    const forward = FORWARD.exec(value);
-    return [[key, captured(forward?.[1] ?? forward?.[3], "FORWARD")] as const];
+/** The values the call hands on rather than deciding here, each with the name it was read under. */
+function forwarded(read: Read, path: string, kind: Kind): (readonly [string, string])[] {
+  const forward = forwardOf(kind);
+  return passes(read, path, kind).flatMap(([key, value]) => {
+    const reference = typeof value === "string" ? forward.exec(value) : null;
+    if (reference === null) return [];
+    return [[key, captured(reference[1] ?? reference[3], `the ${kind} reference`)] as const];
   });
 }
 
 /**
- * Every string in a document, which is where an expression can be.
- *
- * A reference to an input is not confined to a `with:` value: `if: inputs.x`
- * carries one bare, an `env:` maps one into a step's shell, and a job's
- * `services` could hold one too. Reading the strings rather than a fixed set of
- * keys is what makes "is this input read by anything" a question about the
- * file instead of about a list somebody remembered to update.
+ * Every name this workflow reads out of one context, anywhere in it — the
+ * mirror of `reads`, which asks about a name somebody already has.
  */
-function stringsIn(document: unknown): string[] {
-  if (typeof document === "string") return [document];
-  if (isList(document)) return document.flatMap((node) => stringsIn(node));
-  if (!isForeign(document)) return [];
-  return Object.values(document).flatMap((node: unknown) => stringsIn(node));
+function referenced(read: Read, kind: Kind): string[] {
+  const reference = new RegExp(`${kind}(?:\\.([\\w-]+)|\\[(['"])([^'"]+)\\2\\])`, "gu");
+  return [
+    ...new Set(
+      stringsIn(read.document).flatMap((text) =>
+        [...text.matchAll(reference)].map((found) =>
+          captured(found[1] ?? found[3], `the ${kind} reference`),
+        ),
+      ),
+    ),
+  ];
 }
 
-/** Whether anything in `document` reads the named input, in either spelling an expression has. */
-function reads(document: unknown, name: string): boolean {
-  const reference = new RegExp(`inputs(?:\\.${name}(?![\\w-])|\\[(['"])${name}\\1\\])`, "u");
+/**
+ * Whether anything in `document` reads the named value, in either spelling an
+ * expression has.
+ *
+ * Read off every string rather than off a set of keys: a reference is not
+ * confined to a `with:` value — `if: inputs.x` carries one bare, an `env:` maps
+ * one into a step's shell, a step's `with:` hands a secret to an action — and
+ * reading the strings is what makes "does anything act on this" a question
+ * about the file instead of about a list somebody remembered to update.
+ */
+function reads(document: unknown, kind: Kind, name: string): boolean {
+  const reference = new RegExp(`${kind}(?:\\.${name}(?![\\w-])|\\[(['"])${name}\\1\\])`, "u");
   return stringsIn(document).some((text) => reference.test(text));
 }
 
@@ -208,56 +273,114 @@ const wrapper = await workflow(WRAPPER);
 const ci = await workflow(".github/workflows/ci.yml");
 const upstream = await installed();
 
-test("every input the wrapper hands dev-config reaches its check.yml under its own name", () => {
-  const passes = Object.entries(call(wrapper, "check.yml").with);
-  const passed = forwarded(wrapper, "check.yml");
-  // Two failures, and a run shows neither of them: an input handed on under a
-  // neighbour's name is a setting the consumer wrote with a wrong answer beside
-  // it, and a key dev-config does not declare is a whole argument it ignores.
-  expect(passed.filter(([key, from]) => key !== from)).toEqual([]);
-  expect(passes.map(([key]) => key).filter((key) => !(key in inputsOf(upstream)))).toEqual([]);
-});
-
 /**
- * The third failure the check above used to catch, now asked of every input
- * rather than only of the ones handed on.
+ * The three rules about the passing rather than about the value, each asked of
+ * both contexts from one implementation.
  *
- * The wrapper declares two kinds: a pass-through, which exists in order to
- * reach dev-config, and an input of this repo's own, which drives a job here
- * and must never reach dev-config at all. An equality between "declared" and
- * "forwarded" cannot express the second kind — and the failure it was there to
- * catch is the same for both, so it is asked the way that covers both: a
- * declared input nothing reads is a setting a consumer wrote that nothing acts
- * on, which is silence with a plausible-looking workflow around it.
+ * They are one decision twice over in GitHub's own model — a `workflow_call`
+ * declares inputs and secrets the same way, a caller passes each the same way,
+ * and an expression reads them with one word changed — so a rule written for
+ * one of them and not the other is a hole with no argument behind it, which is
+ * what the secrets half was until this loop.
+ *
+ * What a secret costs when one of them is broken is worse in both directions.
+ * Forwarded under a name dev-config does not declare, the call is refused
+ * outright — a called workflow rejects a secret it never asked for — so every
+ * consumer's run dies at the call over a value none of them wrote. Declared and
+ * read by nothing, it is a key a consumer had to go and mint, hand over, and
+ * watch do nothing.
  */
-test("every input the wrapper declares is read by something", () => {
-  const handed = new Set(forwarded(wrapper, "check.yml").map(([key]) => key));
-  const own = ownJobs(wrapper);
-  const unread = Object.keys(inputsOf(wrapper)).filter(
-    (name) => !handed.has(name) && !own.some((job) => reads(job, name)),
-  );
-  expect(unread).toEqual([]);
-});
+for (const { kind, one } of KINDS) {
+  test(`every ${one} the wrapper hands dev-config reaches its check.yml under its own name`, () => {
+    const forwards = forwarded(wrapper, "check.yml", kind);
 
-test("every input the wrapper shares with dev-config is declared exactly as dev-config declares it", () => {
-  const differs = Object.entries(inputsOf(wrapper)).filter(
-    ([name, { type, default: fallback }]) => {
+    // Never vacuous: a call that stopped passing this context at all would
+    // satisfy every filter below.
+    expect(forwards).not.toEqual([]);
+    // Two failures, and a run shows neither of them: a value handed on under a
+    // neighbour's name is a setting the consumer wrote with a wrong answer
+    // beside it, and a key dev-config does not declare is a whole argument it
+    // ignores — or, for a secret, a call it refuses outright.
+    expect(forwards.filter(([key, from]) => key !== from)).toEqual([]);
+    expect(
+      passes(wrapper, "check.yml", kind)
+        .map(([key]) => key)
+        .filter((key) => !(key in declared(upstream, kind))),
+    ).toEqual([]);
+  });
+
+  /**
+   * The third failure the check above used to catch, asked of everything this
+   * workflow declares rather than only of what it hands on.
+   *
+   * The wrapper declares two sorts: a pass-through, which exists in order to
+   * reach dev-config, and one of this repo's own, which drives a job here and
+   * must never reach dev-config at all. An equality between "declared" and
+   * "forwarded" cannot express the second — and the failure it was there to
+   * catch is the same for both, so it is asked the way that covers both: a
+   * declaration nothing reads is a setting a consumer wrote that nothing acts
+   * on, which is silence with a plausible-looking workflow around it.
+   */
+  test(`every ${one} the wrapper declares is read by something`, () => {
+    const handed = new Set(forwarded(wrapper, "check.yml", kind).map(([key]) => key));
+    const own = ownJobs(wrapper);
+    const unread = Object.keys(declared(wrapper, kind)).filter(
+      (name) => !handed.has(name) && !own.some((job) => reads(job, kind, name)),
+    );
+
+    expect(unread).toEqual([]);
+  });
+
+  /**
+   * And the other direction, which is the one that fails silently: a name this
+   * workflow reads and never declared.
+   *
+   * A called workflow is handed only what its own `workflow_call` declares, so
+   * `${{ secrets['git-ssh-key'] }}` in a file that declares no such secret is
+   * not an error anywhere — it is the empty string, in every run, for every
+   * consumer. The key the consumer minted and mapped reaches the install as
+   * nothing, and the install does what it does without one: a private
+   * dependency fails as if no key had been passed at all. The same shape holds
+   * for an input, one step less quietly.
+   */
+  test(`every ${one} this workflow reads is one it declares`, () => {
+    const undeclared = referenced(wrapper, kind).filter(
+      (name) => !(name in declared(wrapper, kind)),
+    );
+
+    expect(referenced(wrapper, kind)).not.toEqual([]);
+    expect(undeclared).toEqual([]);
+  });
+
+  /**
+   * And declared the way dev-config declares it, on the fields that context
+   * has: a type and a default for an input, `required` for a secret.
+   *
+   * A type, a default or a requirement of this repo's own is a wrapper that
+   * answers for dev-config: a caller who omits the value gets this file's idea
+   * of what it means, and the workflow that reads it never sees the difference.
+   * A secret this workflow made `required` would refuse every consumer who has
+   * no private dependency — most of them — over a key dev-config's own callers
+   * may omit.
+   *
+   * `OURS` is the exemption, and it names inputs: the two this family has that
+   * dev-config has no word for, graded by the check below instead. This
+   * workflow declares no secret of its own, and one that appeared would be
+   * caught right here as a name dev-config does not declare, which is what that
+   * map exempts an input from.
+   */
+  test(`every ${one} the wrapper shares with dev-config is declared exactly as dev-config declares it`, () => {
+    const theirs = declared(upstream, kind);
+    const differs = Object.entries(declared(wrapper, kind)).filter(([name, mine]) => {
       if (OURS.has(name)) return false;
-      const theirs = inputsOf(upstream)[name];
-      return theirs === undefined || type !== theirs.type || fallback !== theirs.default;
-    },
-  );
-  // A type or a default of this repo's own is a wrapper that answers for
-  // dev-config: a caller who omits the input gets this file's idea of what it
-  // means, and the workflow that reads it never sees the difference. It holds
-  // for an input of this repo's own too, and for a stronger reason — the four so
-  // far are `database`, `upgrade-gate`, `db-gate-evidence` and `start-command`,
-  // which this repo implements for the MySQL family and dev-config implements
-  // for Postgres. A consumer switching
-  // between the two workflows writes one call either way, and a name that meant
-  // something different here is the trap that shape is worth avoiding.
-  expect(differs).toEqual([]);
-});
+      const upstreams = theirs[name];
+      if (upstreams === undefined) return true;
+      return GRADED[kind].some((field) => mine[field] !== upstreams[field]);
+    });
+
+    expect(differs).toEqual([]);
+  });
+}
 
 /**
  * The other half of that rule, for the inputs dev-config has no name for. Two
@@ -269,13 +392,13 @@ test("every input the wrapper shares with dev-config is declared exactly as dev-
  */
 test("an input of this repo's own is a name dev-config does not have, in the shape its kind has", () => {
   for (const [name, shape] of OURS) {
-    expect(`dev-config declares ${name}: ${name in inputsOf(upstream)}`).toBe(
+    expect(`dev-config declares ${name}: ${name in declared(upstream, "inputs")}`).toBe(
       `dev-config declares ${name}: false`,
     );
-    const declared = inputsOf(wrapper)[name];
-    expect(declared?.type).toBe("string");
+    const ours = declared(wrapper, "inputs")[name];
+    expect(ours?.type).toBe("string");
     if (shape === "an allowlist") {
-      expect(`${name} defaults to: ${String(declared?.default)}`).toBe(`${name} defaults to: `);
+      expect(`${name} defaults to: ${String(ours?.default)}`).toBe(`${name} defaults to: `);
       continue;
     }
     // The image default is the one thing in this repo that dev-config's own pin
@@ -284,7 +407,7 @@ test("an input of this repo's own is a name dev-config does not have, in the sha
     // is why an expression cannot go there). So the rule it would have applied is
     // applied here instead — a default that drifted to a mutable tag would
     // otherwise ship to every consumer who writes nothing.
-    expect(`${name} defaults to a digest: ${DIGEST.test(String(declared?.default))}`).toBe(
+    expect(`${name} defaults to a digest: ${DIGEST.test(String(ours?.default))}`).toBe(
       `${name} defaults to a digest: true`,
     );
   }
@@ -299,7 +422,7 @@ test("README.md's account of the input surface is dev-config's own", async () =>
       [captured(name, "the input table"), captured(type, "the input table")] as const,
   );
   expect(tabled.toSorted(byName)).toEqual(
-    Object.entries(inputsOf(wrapper))
+    Object.entries(declared(wrapper, "inputs"))
       .map(([name, { type }]) => [name, type ?? ""] as const)
       .toSorted(byName),
   );
@@ -328,7 +451,7 @@ test("README.md's account of the input surface is dev-config's own", async () =>
     [...tabled.map(([name]) => name).filter((name) => !OURS.has(name)), ...refused].toSorted(
       alphabetically,
     ),
-  ).toEqual(Object.keys(inputsOf(upstream)).toSorted(alphabetically));
+  ).toEqual(Object.keys(declared(upstream, "inputs")).toSorted(alphabetically));
 });
 
 test("nothing in the call is this workflow answering for its consumer", () => {
@@ -341,14 +464,17 @@ test("nothing in the call is this workflow answering for its consumer", () => {
   // one spelling, two questions, and a literal to hold them apart. Their enum has
   // `external` for a workflow that runs the database gates in that job's place,
   // so the two questions became one input and the literal went with them.
+  const forwards = forwardOf("inputs");
   expect(
-    Object.entries(call(wrapper, "check.yml").with).filter(([, value]) => !forwards(value)),
+    passes(wrapper, "check.yml", "inputs").filter(
+      ([, value]) => typeof value !== "string" || !forwards.test(value),
+    ),
   ).toEqual([]);
 
   // And the value that decides both jobs really is handed on rather than
   // dropped: a call that stopped naming it would leave dev-config on its own
   // default while the job here still ran off the consumer's answer.
-  expect(forwarded(wrapper, "check.yml").map(([key]) => key)).toContain("database");
+  expect(forwarded(wrapper, "check.yml", "inputs").map(([key]) => key)).toContain("database");
 });
 
 test("this repo is gated by, and installs, the dev-config it hands its consumers", async () => {
@@ -362,6 +488,40 @@ test("this repo is gated by, and installs, the dev-config it hands its consumers
   expect(pinned).toStartWith(
     captured(LOCKED.exec(await Bun.file(`${root}/bun.lock`).text())?.[1], "LOCKED"),
   );
+});
+
+/** Every pin of one action in a document, deduplicated: two steps naming one commit are one pin. */
+function pinsOf(read: Read, action: RegExp): string[] {
+  return [...new Set(stringsIn(read.document).filter((text) => action.test(text)))];
+}
+
+/**
+ * The database job's install is dev-config's own action, and this is what makes
+ * that a fact rather than a claim three pages repeat.
+ *
+ * Every other pin in this file is either one of this repo's own commits, which
+ * the two checks below grade, or a third party's, which Renovate moves and a
+ * reviewer reads. This one is neither: it is dev-config's, and the whole reason
+ * it is here is that the static job installs through the same action at the
+ * same commit — one key, one install, both jobs. Nothing but the shape of a SHA
+ * held it before, and a pin that drifts off theirs is two installs again, with
+ * the difference invisible until a consumer's key works in one job and not the
+ * other.
+ *
+ * The oracle is the dev-config this repo installs, which is the commit both
+ * workflows call: their own `check.yml` pins the action their jobs use, so the
+ * question is simply whether this file names what that file names.
+ */
+test("the install this wrapper runs is the one dev-config's own check.yml pins", () => {
+  const ours = pinsOf(wrapper, INSTALL);
+  const theirs = pinsOf(upstream, INSTALL);
+
+  // Neither side vacuous: a wrapper that stopped installing through their
+  // action, and an upstream whose job stopped using it, are both a rule with
+  // nothing under it.
+  expect(ours).toHaveLength(1);
+  expect(theirs).toHaveLength(1);
+  expect(ours).toEqual(theirs);
 });
 
 /**

@@ -204,19 +204,65 @@ test("every step runs in the action's own checkout, under the interpreter and pa
   }
 });
 
+/** Where in the job the graded repo's dependencies are installed, by the action that installs them. */
+const INSTALL = "dev-config/.github/actions/install";
+
 test("the caller reads the interpreter and the path before the graded repo runs", () => {
   const steps = jobSteps();
   const at = (matches: (step: Foreign) => boolean): number => steps.findIndex((s) => matches(s));
 
   const pinned = at((step) => textAt(step, "id") === "pinned");
-  const install = at((step) => (textAt(step, "run") ?? "").includes("bun install"));
+  // Found by the action rather than by a `bun install` in a `run:` block: the
+  // install is dev-config's step now, because it is the one that can be handed a
+  // key. What this rule is about did not change with it.
+  const install = at((step) => (textAt(step, "uses") ?? "").includes(INSTALL));
   const gate = at((step) => (textAt(step, "uses") ?? "").includes("db-serving"));
 
   // Order is the whole of the argument: a value read after the graded repo's
   // own install scripts have run is a value that repo could have rewritten.
   expect(pinned).toBeGreaterThan(-1);
+  expect(install).toBeGreaterThan(-1);
   expect(pinned).toBeLessThan(install);
   expect(install).toBeLessThan(gate);
+});
+
+/**
+ * The install is the second half of one door: dev-config's static gate takes
+ * the consumer's key through the call, and this job's install has to take the
+ * same key from the same secret, or a consumer with a private git dependency
+ * passes one job and dies in the next at `bun install` — on a step that never
+ * asked for a credential, over a dependency its manifest names.
+ *
+ * Pinned by full path and SHA like every other action here, and handed the
+ * secret and nothing else: the key's whole safety is that it is written, used
+ * and removed inside that action's own shell, so this job's part is to pass it
+ * there and nowhere else.
+ */
+test("the database job installs through dev-config's install, carrying the key", () => {
+  // `stepUsing` rather than a find of this test's own: a job that has stopped
+  // installing through that action fails by name here, rather than as a
+  // malformed pin belonging to a step that is not there.
+  const step = stepUsing(INSTALL);
+
+  expect(textAt(step, "uses")).toMatch(
+    /^gokayo43\/dev-config\/\.github\/actions\/install@[0-9a-f]{40}$/u,
+  );
+  // The key and nothing else: what makes it safe is that it is written, used
+  // and removed inside that action's own shell, so this job's part is to hand
+  // it there and to hold nothing back for itself.
+  expect(mapAt(step, "with")).toEqual({ "git-ssh-key": "${{ secrets['git-ssh-key'] }}" });
+});
+
+/**
+ * And one install, not two. A `bun install` left in a `run:` block beside the
+ * action is a second answer to which dependencies this job graded — and it is
+ * the answer that takes no key, so a consumer with a private dependency would
+ * meet exactly the failure the action is here to end.
+ */
+test("nothing in the database job installs the other way", () => {
+  expect(jobSteps().filter((each) => (textAt(each, "run") ?? "").includes("bun install"))).toEqual(
+    [],
+  );
 });
 
 /**
