@@ -21,16 +21,16 @@
   },
   "devDependencies": {
     "@gokayo43/dev-config": "github:gokayo43/dev-config#97d521f411cb38877d9a58cae01cd1fa07b569b1",
-    "@types/bun": "1.3.14",
+    "@types/bun": "1.4.2",
     "drizzle-orm": "0.45.2",
-    "knip": "6.32.2",
-    "lefthook": "2.1.10",
-    "mysql2": "3.23.3",
-    "oxfmt": "0.63.0",
+    "knip": "6.35.1",
+    "lefthook": "2.1.12",
+    "mysql2": "3.24.4",
+    "oxfmt": "0.67.0",
     "oxlint": "1.82.0",
     "oxlint-tsgolint": "7.0.2001",
     "typescript": "7.0.2"
   },
-  "packageManager": "bun@1.3.14",
+  "packageManager": "bun@1.4.2",
   "lifecycle": "dev"
 }
