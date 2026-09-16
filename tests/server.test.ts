@@ -166,38 +166,35 @@ test("a container left behind by a previous run is reclaimed rather than collide
 }, 120_000);
 
 /**
- * The collision the fixed host port was: two jobs of two consumers, or two legs
- * of one matrix, land on one docker daemon on a shared runner and start their
- * servers at the same moment from the same declaration.
+ * Two servers from one declaration, which is what a shared docker daemon asks
+ * of this step: two consumers' jobs, or two legs of one matrix, each starting
+ * the server their call declares — and neither may be the other's.
  *
- * The wrong implementation is the one this replaces — publish the port the URL
- * names — and it fails here with docker's own "port is already allocated" on
- * whichever container lost, which a consumer reads as their own call being
- * wrong. Both are started at once rather than in sequence, because a sequence
- * would pass against a step that simply re-used a port the first container had
- * already released.
+ * The wrong implementation is the one this replaces, publishing the port the
+ * URL names, and it dies here on docker's own "port is already allocated" for
+ * the second container: a consumer reads that as their own call being wrong.
+ * Started in sequence, because the first is still running when the second
+ * starts — nothing removes either until the `finally` below — so the collision
+ * is the same collision, with one less moving part than racing them.
  */
 test("two servers from one declaration are two ports, so neither job is the other's", async () => {
   const names = [named("beside-a"), named("beside-b")];
   try {
-    const [first, second] = await Promise.all(
-      names.map(async (as) =>
-        startServer({ image: DEFAULT.image, url: SERVER, as, within: 120_000 }),
-      ),
-    );
+    const urls: string[] = [];
+    for (const as of names) {
+      const started = await startServer({ image: DEFAULT.image, url: SERVER, as, within: 120_000 });
+      expect(started.problems).toEqual([]);
+      if (started.url === undefined) throw new Error(`${as} came up and named no port`);
+      urls.push(started.url);
+    }
 
-    expect(`${first?.problems.join(" ")}${second?.problems.join(" ")}`).toBe("");
-    const ports = [first?.url, second?.url].map((url) =>
-      url === undefined ? "" : new URL(url).port,
-    );
     // Assigned, and assigned apart: a step answering with the declaration it was
-    // handed would show two empty strings here, and one answering with a
-    // constant would show one port twice.
-    expect(ports.filter((port) => port === "")).toEqual([]);
-    expect(new Set(ports).size).toBe(2);
+    // handed would have been refused above for naming no port, and one
+    // answering with a constant would show one port twice.
+    expect(new Set(urls.map((url) => new URL(url).port)).size).toBe(2);
     // And each URL reaches a server rather than merely reading well: the port
     // is the one thing every later step of a consumer's job depends on.
-    for (const url of [first?.url ?? "", second?.url ?? ""]) {
+    for (const url of urls) {
       expect(await query(url, "select 1 as one")).toHaveLength(1);
     }
   } finally {
@@ -208,8 +205,8 @@ test("two servers from one declaration are two ports, so neither job is the othe
 /**
  * The four wiring faults, which are refused before docker is asked anything: a
  * composite action maps an input nobody passed to the empty string, and the
- * other two name a server this step is not the one starting. Each costs nothing
- * to ask and saves the whole bound to answer.
+ * other three name a server this step is not the one starting. Each costs
+ * nothing to ask and saves the whole bound to answer.
  */
 test("an empty image is refused as the wiring fault it is", async () => {
   const verdict = await startServer({

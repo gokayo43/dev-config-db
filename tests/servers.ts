@@ -1,4 +1,4 @@
-// oxlint-disable-next-line no-restricted-imports -- a case's slice of the shared server is a database this module made for it, and the case holds its URL rather than a disposable; dropping it here is what keeps one killed run from leaving a database per case on a server the whole run shares
+// oxlint-disable-next-line no-restricted-imports -- what `emptyDatabase` hands a case is a URL rather than a disposable, so `await using` would mean changing every call site to hold an object and read `.url` off it; #23 is that change
 import { afterEach } from "bun:test";
 
 import { isList } from "../.github/actions/_lib/foreign.ts";

@@ -50,6 +50,16 @@ What it buys back is that the wait is this repo's code rather than a health
 command in YAML: it is graded by `tests/server.test.ts` against both products,
 including the ways it can go wrong.
 
+**The container is the job's to remove, and `check.yml`'s last step is where.**
+A composite action has no `post:` — that belongs to JavaScript and Docker
+actions — so nothing in this step can take its own container down afterwards. A
+runner that is thrown away made that invisible; a persistent one turns it into a
+database server per consumer workspace, resident between runs with the last
+run's replayed schemas in it, on a published loopback port. The removal runs
+under `always()`, because the runs whose server is most worth removing are the
+ones that failed or hit the job's own timeout. The reclaim at the top of this
+step stays: it is what a run that was killed outright leaves behind.
+
 ## What it does
 
 1. Reclaims the container name — `db-gate-server-<digest of the job's
@@ -88,6 +98,13 @@ carries no destination match, so the container answers on the box's public
 address whatever the host firewall says. README's "Where it runs" is where both
 are argued for the workflow as a whole.
 
+An image serving on a port other than 3306 is not one of the ways this goes
+wrong here: docker creates the mapping when the container starts, whatever the
+image goes on to listen on — probed, `alpine sleep 30` answers
+`127.0.0.1:33621` while running — so such an image is a mapping that answers
+nothing, and the poll below reports it as a server that never answered. The only
+way to have no mapping at all is a container that is gone.
+
 So nothing names a port: the step publishes for the daemon to assign, reads the
 assignment back, and answers with the URL it is on. That answer is a step
 **output** rather than a `$GITHUB_ENV` write, because the runner folds one of
@@ -112,9 +129,6 @@ database this step started.
   timeout, because the reason is in the image's first lines.
 - **A server that never answers within the bound** — two minutes — with its
   output relayed the same way.
-- **A running container docker published no port for**, which is an image
-  serving somewhere other than 3306: it is up, and no gate in the job can reach
-  it.
 
 ## What a consumer on MySQL 8 has to know about clients
 

@@ -46,12 +46,25 @@ fails here: a column the model says is not null and the lineage left nullable,
 an enum the code selects on that no migration created, an index a startup query
 needs. Every one of those is a green replay and a dead deploy.
 
-The poll watches the process as well as the URL. A start command that dies on
+The poll watches the process as well as the URL, and the two are read together:
+a 200 counts as this app's answer only while the process this step started is
+alive to have served it, read out of `/proc` at the moment the answer arrives
+rather than out of the runtime, which learns of an exit as an event and learns
+it late. An app that answers and dies in the same breath is reported as having
+exited — it is not serving either way. A start command that dies on
 its first line otherwise looks exactly like a slow boot, and the run spends its
 whole bound before saying so — the diagnostic then names the app rather than the
 bound, and carries what the app itself wrote. Each attempt is bounded too, and
 never by longer than what is left of the whole bound: a process that accepts the
 connection and never answers is otherwise indistinguishable from a slow boot.
+
+**A `health-url` that already answers is refused before anything is started.**
+The step polls a URL to decide whether the app came up, and a 200 off a port
+something else on the machine already holds says nothing about the app — it says
+the runner is shared. Left alone, that is not one wrong verdict: it is a green
+boot, a probe and twenty ramp VUs, all run against a stranger while the app
+under grade never ran. A consumer meets this only by naming a `health-url` of
+its own; the job allocates a port for the app otherwise.
 
 A `health-url` that is not an http(s) URL is refused by name rather than polled.
 `localhost:3000/health` parses as a URL — with `localhost:` read as its scheme —

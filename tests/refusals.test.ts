@@ -204,6 +204,15 @@ test("a call carrying every misplaced input is told about every one of them", as
   }
 });
 
+/**
+ * Also the one caller this guard cannot see, and it is the same call: a
+ * `workflow_call` input cannot be asked whether the caller passed it —
+ * `github.event.inputs` is not populated for one — so a caller who passes
+ * exactly the declared default sends what a caller who wrote nothing sends, and
+ * `ran` seeds every input with its declared default. A second case spelling
+ * those defaults out would die to the same wrong implementation as this one.
+ * docs/gates/db-serving.md names the hole.
+ */
 test("a call that asks for neither passes, which is every consumer that has not adopted", async () => {
   const quiet = await ran({ DATABASE: "none" });
 
@@ -241,20 +250,6 @@ test("the defaults the guard compares against are the defaults this workflow dec
     (input) => !compared.includes(input),
   );
   expect(emptily.filter((input) => declaredDefault(input) !== "")).toEqual([]);
-});
-
-test("passing those exactly as they are declared is the one caller this cannot see", async () => {
-  const invisible = await ran({
-    DATABASE: "none",
-    DATABASE_IMAGE: declaredDefault("database-image"),
-    UPGRADE_GATE: declaredDefault("upgrade-gate"),
-  });
-
-  // Not a wish: a workflow_call input cannot be asked whether the caller passed
-  // it, and `github.event.inputs` is not populated for one. The value is the
-  // same as the value a caller who wrote nothing gets, so there is nothing left
-  // to tell the two apart.
-  expect(invisible.status).toBe(0);
 });
 
 test("a bound with no probe under it is refused whether or not the job runs", async () => {

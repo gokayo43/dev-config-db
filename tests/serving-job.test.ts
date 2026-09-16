@@ -157,6 +157,7 @@ test("the job hands the serving gate every input it declares, each under its own
     ["bun", "${{ steps.pinned.outputs.bun }}"],
     ["path", "${{ steps.pinned.outputs.path }}"],
   ]);
+  expect(Object.keys(passed)).not.toContain("database-url");
   const crossed = Object.entries(passed).filter(([name, value]) => {
     const pinned = PINNED.get(name);
     if (pinned !== undefined) return value !== pinned;
@@ -228,6 +229,56 @@ test("the caller reads the interpreter and the path before the graded repo runs"
  * would report a refused connection, which reads as a fact about the repo under
  * grade rather than as a job that was assembled wrong.
  */
+/**
+ * Every gate is handed the database as the server step's own output, and the
+ * map below is where a second source would show up: the value is also in the
+ * environment, for the graded repo's own processes, and a gate reading it from
+ * there would be reading something that repo's later steps can rewrite.
+ */
+test("every gate takes the database from the step that started it, not from the environment", () => {
+  const handed = jobSteps().flatMap((step) => {
+    const given = textAt(mapAt(step, "with"), "database-url");
+    if (given === undefined) return [];
+    return [{ starts: (textAt(step, "uses") ?? "").includes("actions/db-server"), given }];
+  });
+  const gates = handed.filter(({ starts }) => !starts).map(({ given }) => given);
+
+  // The replay, the upgrade path and the DATETIME catalogue. The serving gate
+  // takes none at all — its app reads the environment, which is the one place a
+  // process the graded repo wrote can read it from.
+  expect(gates).toHaveLength(3);
+  expect(gates.filter((value) => value !== "${{ steps.server.outputs['database-url'] }}")).toEqual(
+    [],
+  );
+  // And the one step that takes something else is the one that starts the
+  // server: what it is handed is the declaration the port is not in yet.
+  expect(handed.filter(({ starts }) => starts).map(({ given }) => given)).toEqual([
+    "mysql://root:db-gate@127.0.0.1/app",
+  ]);
+});
+
+/**
+ * The container the server step created, removed by the job that asked for it.
+ *
+ * A composite action has no `post:` — that belongs to JavaScript and Docker
+ * actions — so nothing in the action can take its own container down, and on a
+ * persistent runner what that leaves behind is a database server per consumer
+ * workspace, resident between runs with the last run's schemas in it. The
+ * removal is the job's, it is last, and it runs whatever happened to the run:
+ * the failed and the timed-out ones are exactly the runs whose server would
+ * otherwise stay.
+ */
+test("the job takes its server down, whatever happened to the run", () => {
+  const steps = jobSteps();
+  const last = steps.at(-1);
+
+  expect(textAt(last, "if")).toBe("${{ always() }}");
+  expect(textAt(last, "run")).toContain("docker rm --force");
+  // The container it removes is the one the server step named, rather than a
+  // name this file derives a second time.
+  expect(textAt(mapAt(last, "env"), "CONTAINER")).toBe("${{ steps.server.outputs.container }}");
+});
+
 test("every step that uses the database comes after the step that starts it", () => {
   const steps = jobSteps();
   const using = (named: string): number =>

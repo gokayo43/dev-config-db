@@ -27,12 +27,18 @@ const SUMMARY = join(import.meta.dir, "k6-summary.json");
 const CASES = {
   // An account no image creates and an image that is never reached: the step
   // refuses the account before it asks docker anything, which is enough to prove
-  // the process ends.
-  "db-server/server.main.ts": async () => ({
-    INPUT_DATABASE_IMAGE: "mariadb:11.4",
-    INPUT_WORKSPACE: await materialise({}),
-    DATABASE_URL: "mysql://app:db-gate@127.0.0.1/app",
-  }),
+  // the process ends. $GITHUB_OUTPUT is where it answers with the container it
+  // is about to create, which it writes before it creates anything — a file
+  // here, as the runner gives it one.
+  "db-server/server.main.ts": async () => {
+    const project = await materialise({});
+    return {
+      INPUT_DATABASE_IMAGE: "mariadb:11.4",
+      INPUT_WORKSPACE: project,
+      DATABASE_URL: "mysql://app:db-gate@127.0.0.1/app",
+      GITHUB_OUTPUT: join(project, "outputs.txt"),
+    };
+  },
 
   "db-replay/replay.main.ts": async () => ({
     // A project with no package.json, which the gate refuses before it opens a

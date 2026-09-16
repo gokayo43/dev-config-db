@@ -73,7 +73,10 @@ that has been improved says so at the line that improved it.
   wherever the step resolves a program by name, and the database as the server
   step's own output — docker assigns the port, so that value is one step later
   and still earlier than anything the graded repo runs. Every one of the three
-  is an expression a later step cannot rewrite. `#2`, `#3`,
+  is an expression a later step cannot rewrite, and the job's last step removes
+  the container the server step named — a composite action has no `post:`, so a
+  server nobody takes down outlives the job on a runner that is not thrown
+  away. `#2`, `#3`,
   `#5` and the upgrade path are shipped; `#4`'s backfill half and `#6` land as
   further steps of it, each with the composite action that runs it, its own
   suite, and its page under `docs/gates/` — the shape dev-config's "Adding a
@@ -236,9 +239,9 @@ bun test
 
 `wmstcs` calls this workflow; `nfp-elysia` has no CI workflow at all yet and
 needs the fleet scaffold before the wrapper is worth pointing at. A consumer
-also needs a runner carrying `self-hosted` and `linux`, or its jobs queue
-rather than fail — `README.md`'s "Where it runs" is what a runner has to
-provide. Two things in dev-config's repo contract
+also needs a runner carrying `self-hosted` and `linux`: without one its jobs
+queue and are cancelled 24 hours later, which reads as a run that never started
+— `README.md`'s "Where it runs" is what such a runner has to provide. Two things in dev-config's repo contract
 refuse a consumer of this workflow on facts that are about dev-config's own
 Postgres job rather than about the repo —
 [dev-config#65](https://github.com/gokayo43/dev-config/issues/65) carries both,

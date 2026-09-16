@@ -30,53 +30,47 @@ run.
 
 Every job in `.github/workflows/check.yml` and in this repo's own `ci.yml`
 declares `runs-on: [self-hosted, linux]`, which is dev-config's own spelling of
-the same thing. **A consumer needs a runner carrying both labels, or its jobs
-queue until one appears** — there is no timeout on a queued job, so the symptom
-is a run that never starts rather than one that fails.
+the same thing. **A consumer needs a runner carrying both labels.** Without one
+its jobs queue and GitHub cancels them 24 hours later, so what a consumer sees
+is a run that never started rather than one that failed naming the reason.
 
 What such a runner has to provide, beyond those two labels:
 
 - **A docker daemon it can reach.** The server the database job grades is a
   container this workflow starts, and Redis is a service container beside it.
 - **Passwordless `sudo`**, for dev-config's test-suite gate inside the `static`
-  job: it seals `bun test` in a network namespace of its own, and the
-  unprivileged form of that is refused wherever
-  `kernel.apparmor_restrict_unprivileged_userns` reads `1`. A runner without it
-  gets a step that says so rather than a suite that quietly runs unsealed.
+  job — their
+  [docs/gates/test-suite.md](https://github.com/gokayo43/dev-config/blob/main/docs/gates/test-suite.md)
+  is what it is for and what a runner without it gets.
 - **Room for a workspace that is not discarded when the run ends.** What cleans
   it is `actions/checkout` at the start of the next run.
 
 Three things follow from that machine being shared and persistent rather than a
-fresh cloud VM, and they are why the database job looks the way it does. Two of
-its jobs overlapping on one docker daemon is the ordinary case, not the corner
-one:
+fresh cloud VM. Two of its jobs overlapping on one docker daemon is the ordinary
+case, not the corner one, and nothing in the database job may assume otherwise:
 
-- **Redis publishes on `127.0.0.1` and on a port the daemon picks**
-  (`ports: ["127.0.0.1::6379"]`), read back out of the `job` context. A bare
-  `6379:6379` binds `0.0.0.0`, and the DNAT rule docker installs carries no
-  destination match — so the container answers on the box's public address
-  whatever the host firewall says, since `ufw` does not filter the FORWARD path.
-  A fixed host port is also single-occupancy, and the second job to start dies
-  with "port is already allocated".
-- **The server gets the same treatment**, from the step that starts it rather
-  than from the runner: `docker run --publish 127.0.0.1::3306`, with the
-  assignment read back and answered as the step's `database-url` output. So
-  `DATABASE_URL` names the port docker assigned and never `3306`, and the
-  gates take it from an output rather than from the environment — a value the
-  graded repo's own steps cannot rewrite.
-  [docs/gates/db-server.md](docs/gates/db-server.md) is the page.
+- **Nothing publishes on a fixed host port, and nothing publishes on
+  `0.0.0.0`.** Redis is `ports: ["127.0.0.1::6379"]` with the assignment read
+  back out of the `job` context; the server is `docker run --publish
+127.0.0.1::3306` with the assignment read back and answered as the server
+  step's `database-url` output, so `DATABASE_URL` names the port docker assigned
+  and never `3306`. Why those two forms and not the obvious ones is
+  [docs/gates/db-server.md](docs/gates/db-server.md), "Why the port is the
+  daemon's".
 - **The app the serving gate boots gets an allocated port too.** `health-url`
   defaults to `http://localhost:${PORT}/api/health`, where `PORT` is a free port
-  the job bound and exported before the gate ran; `3000` is the framework
-  default and therefore the port something else on a shared box already holds.
-  `PORT` is the platform convention, so an app that honours it needs no further
-  wiring — one that does not sets `start-command` and `health-url`.
-
-One credential does not follow the rest: `git-ssh-key` is a secret this workflow
-declares and hands to dev-config's install step, which is where a private git
-dependency is read. The database job's own `bun install --frozen-lockfile`
-carries no key, so a consumer whose dependencies include a private repository is
-installed by the `static` job and not by that one.
+  the job binds immediately before the gate runs and passes to the app; `3000`
+  is the framework default and therefore the port something else on a shared box
+  already holds. `PORT` is the platform convention, so an app that honours it
+  needs no further wiring. **A consumer that sets `health-url` names a port the
+  allocation cannot reach, so it owes that port to its app as well** — in
+  `start-command`, e.g. `env PORT=8080 bun run start`, since no input can
+  reference a value the job allocates while it runs. The boot gate refuses a
+  `health-url` something already answers rather than grading whatever that is.
+- **The job takes its server container down when it ends**, on every run
+  including the failed and the cancelled ones. A composite action has no `post:`
+  of its own, so without that step a persistent runner keeps one database server
+  per consumer workspace resident between runs.
 
 ## Calling it
 

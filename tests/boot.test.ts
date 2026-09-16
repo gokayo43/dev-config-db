@@ -75,6 +75,40 @@ test("an app that dies on the way up is refused by its exit, not by the bound", 
   expect(took).toBeLessThan(20_000);
 });
 
+/**
+ * The failure a shared, persistent runner has and a fresh VM does not: the
+ * health URL is a port on a machine other things also listen on, and a 200 off
+ * it says nothing about the process this step started. Here the stranger is
+ * this case's own server and the start-command dies at once — so a gate that
+ * polls the URL alone reports a boot, and the probe and twenty ramp VUs after
+ * it are aimed at the stranger while the app that was supposed to be under
+ * grade never ran.
+ */
+test("a 200 from something else on the box is not this app's boot", async () => {
+  const root = await materialise({});
+  const port = await freePort();
+  const stranger = Bun.serve({ port, hostname: "127.0.0.1", fetch: () => new Response("ok") });
+  const url = `http://127.0.0.1:${port}/health`;
+  try {
+    const verdict = await bootGate({
+      root,
+      command: "exit 1",
+      url,
+      log: join(root, "server.log"),
+      seconds: BOOT_SECONDS,
+    });
+
+    expect(verdict.problems).toHaveLength(1);
+    // And the diagnostic names the reading that matters here, rather than
+    // sending its reader to look for a slow boot.
+    expect(verdict.problems[0]).toContain("already answers");
+    expect(verdict.problems[0]).toContain("started nothing yet");
+    expect(verdict.note).toBeUndefined();
+  } finally {
+    await stranger.stop(true);
+  }
+});
+
 test("an app that accepts and never answers is refused at the bound, and taken down", async () => {
   const { verdict, pidFile, took } = await boot("hangs", 2);
 
