@@ -137,6 +137,20 @@ on:
         type: string
         default: ""
 
+    secrets:
+      git-ssh-key:
+        description: >-
+          A deploy key that may READ the private git repository this consumer's
+          manifest names as a dependency — a key on that repository, never a
+          personal token. Both installs in this workflow take it: dev-config's
+          static gate through the call below, and the database job through the
+          same install action of theirs, which writes, uses and removes it
+          inside one shell. Nothing here reads it, logs it or hands it anywhere
+          else. A consumer with no private dependency declares none, and every
+          fork pull request — which carries no secrets at all — takes that same
+          path: both jobs install exactly as they did before this existed.
+        required: false
+
 permissions:
   contents: read
 
@@ -162,6 +176,10 @@ jobs:
       # enum has a value that means "a workflow wrapping this one runs them",
       # so the two questions became one and the literal died with them.
       database: ${{ inputs.database }}
+    # Handed on for the same reason every input above is: the install that reads
+    # it is dev-config's, in the job this call runs.
+    secrets:
+      git-ssh-key: ${{ secrets['git-ssh-key'] }}
 
   # Every input aimed at the database job is a request that job would otherwise
   # never see, and a gate nobody notices is off is the worst kind — so a call
@@ -404,7 +422,21 @@ jobs:
           set -euo pipefail
           printf 'DATABASE_URL=%s\nREDIS_URL=%s\n' "$DATABASE_URL" "$REDIS_URL" >> "$GITHUB_ENV"
 
-      - run: bun install --frozen-lockfile
+      # dev-config's own install rather than a `bun install --frozen-lockfile`
+      # of this workflow's: a consumer whose manifest names a private git
+      # dependency holds no credential in this job — the checkout above drops
+      # the runner's token deliberately — and the key is theirs to write, use
+      # and remove inside one shell, which is what keeps it out of $GITHUB_ENV,
+      # the workspace and every lane after this one. What this workflow owes is
+      # to hand it to nothing else.
+      #
+      # `github-token` and `meta-url` take their defaults: the first is what
+      # their host-key lookup is made with, the second is where GitHub publishes
+      # those keys, and neither is a fact a consumer of this workflow has an
+      # answer to.
+      - uses: gokayo43/dev-config/.github/actions/install@05488dabca760939e06e21ddaa99c661c4a45fad # v0.60.0
+        with:
+          git-ssh-key: ${{ secrets['git-ssh-key'] }}
 
       # The same step dev-config's database job runs, and for the same reason: a
       # repo whose migrator is generated — a schema compiled out of TypeScript, a

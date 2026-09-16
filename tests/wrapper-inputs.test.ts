@@ -71,10 +71,18 @@ interface Workflow {
       readonly inputs?: Readonly<
         Record<string, { readonly type?: string; readonly default?: Argument }>
       >;
+      readonly secrets?: Readonly<Record<string, { readonly required?: boolean }>>;
     };
   };
   readonly jobs?: Readonly<
-    Record<string, { readonly uses?: string; readonly with?: Readonly<Record<string, Argument>> }>
+    Record<
+      string,
+      {
+        readonly uses?: string;
+        readonly with?: Readonly<Record<string, Argument>>;
+        readonly secrets?: Readonly<Record<string, Argument>>;
+      }
+    >
   >;
 }
 
@@ -125,6 +133,19 @@ function inputsOf({
   return typed.on?.workflow_call?.inputs ?? {};
 }
 
+function secretsOf({ typed }: Read): Readonly<Record<string, { readonly required?: boolean }>> {
+  return typed.on?.workflow_call?.secrets ?? {};
+}
+
+/** `${{ secrets.x }}` and `${{ secrets['git-ssh-key'] }}` are one reference written two ways. */
+const SECRET = /^\$\{\{\s*secrets(?:\.([\w-]+)|\[(['"])([^'"]+)\2\])\s*\}\}$/;
+
+/** Whether anything in `document` reads the named secret, in either spelling an expression has. */
+function readsSecret(document: unknown, name: string): boolean {
+  const reference = new RegExp(`secrets(?:\\.${name}(?![\\w-])|\\[(['"])${name}\\1\\])`, "u");
+  return stringsIn(document).some((text) => reference.test(text));
+}
+
 /**
  * The job that calls dev-config's gate. Exactly one, and the count is the check
  * rather than a detail of finding it: a second job calling the same workflow is
@@ -134,7 +155,11 @@ function inputsOf({
 function call(
   { typed }: Read,
   path: string,
-): { readonly uses: string; readonly with: Readonly<Record<string, Argument>> } {
+): {
+  readonly uses: string;
+  readonly with: Readonly<Record<string, Argument>>;
+  readonly secrets: Readonly<Record<string, Argument>>;
+} {
   const jobs = Object.values(typed.jobs ?? {}).filter(
     ({ uses }) => uses !== undefined && CHECK_CALL.test(uses),
   );
@@ -144,7 +169,7 @@ function call(
       `${path} must have exactly one job calling dev-config's check.yml at a pinned commit, and has ${jobs.length}`,
     );
   }
-  return { uses: job.uses, with: job.with ?? {} };
+  return { uses: job.uses, with: job.with ?? {}, secrets: job.secrets ?? {} };
 }
 
 /** Whether the value written beside an input name hands a caller's input on rather than deciding it here. */
@@ -237,6 +262,55 @@ test("every input the wrapper declares is read by something", () => {
     (name) => !handed.has(name) && !own.some((job) => reads(job, name)),
   );
   expect(unread).toEqual([]);
+});
+
+/**
+ * The same rules the inputs above are held to, asked of the one secret this
+ * workflow takes.
+ *
+ * A secret is worse than an input to get wrong in both directions. Forwarded
+ * under a name dev-config does not declare, the call is refused outright — a
+ * called workflow rejects a secret it never asked for, so every consumer's run
+ * dies at the call over a value none of them wrote. Declared and forwarded
+ * nowhere, it is a key a consumer handed this workflow and nothing ever reads,
+ * which is the silence the input rules exist to kill, on the one value a
+ * consumer had to go and mint.
+ */
+test("every secret the wrapper hands dev-config is one they declare, under its own name", () => {
+  const passed = Object.entries(call(wrapper, "check.yml").secrets);
+  const theirs = secretsOf(upstream);
+
+  expect(passed).not.toEqual([]);
+  // Under its own name, and under the same name on both sides: the value beside
+  // it is this workflow's own secret of that name and nothing else, so a typo on
+  // either side is a call handing dev-config an empty key while the consumer's
+  // is sitting right there.
+  expect(
+    passed.filter(([key, value]) => {
+      const reference = SECRET.exec(typeof value === "string" ? value : "");
+      return (reference?.[1] ?? reference?.[3]) !== key;
+    }),
+  ).toEqual([]);
+  expect(passed.map(([key]) => key).filter((key) => !(key in theirs))).toEqual([]);
+});
+
+test("every secret the wrapper declares is read by something here", () => {
+  const handed = new Set(Object.keys(call(wrapper, "check.yml").secrets));
+  const own = ownJobs(wrapper);
+  const unread = Object.keys(secretsOf(wrapper)).filter(
+    (name) => !handed.has(name) && !own.some((job) => readsSecret(job, name)),
+  );
+
+  expect(unread).toEqual([]);
+  // And the database job is one of the things that reads it: its install is the
+  // other half of the door, and a wrapper that forwarded the key to dev-config's
+  // static gate alone would leave a consumer with a private dependency passing
+  // one job and failing the next, on a step that never asked for a key.
+  expect(
+    Object.keys(secretsOf(wrapper)).filter(
+      (name) => !ownJobs(wrapper).some((job) => readsSecret(job, name)),
+    ),
+  ).toEqual([]);
 });
 
 test("every input the wrapper shares with dev-config is declared exactly as dev-config declares it", () => {

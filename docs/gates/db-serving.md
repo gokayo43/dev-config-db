@@ -123,7 +123,7 @@ every one of them ends the same way — the step green, having graded nothing:
   started.
 
 So the calling job reads the interpreter and the search path once, in a step
-placed after `setup-bun` and before `bun install` — the last moment at which no
+placed after `setup-bun` and before the install — the last moment at which no
 line of the graded repo's code has run — and hands both to the action. A step
 output cannot be rewritten once it is set, and a step's own `env:` beats
 anything an earlier step exported, which is what makes those two immutable

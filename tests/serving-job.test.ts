@@ -204,19 +204,52 @@ test("every step runs in the action's own checkout, under the interpreter and pa
   }
 });
 
+/** Where in the job the graded repo's dependencies are installed, by the action that installs them. */
+const INSTALL = "dev-config/.github/actions/install";
+
 test("the caller reads the interpreter and the path before the graded repo runs", () => {
   const steps = jobSteps();
   const at = (matches: (step: Foreign) => boolean): number => steps.findIndex((s) => matches(s));
 
   const pinned = at((step) => textAt(step, "id") === "pinned");
-  const install = at((step) => (textAt(step, "run") ?? "").includes("bun install"));
+  // Found by the action rather than by a `bun install` in a `run:` block: the
+  // install is dev-config's step now, because it is the one that can be handed a
+  // key. What this rule is about did not change with it.
+  const install = at((step) => (textAt(step, "uses") ?? "").includes(INSTALL));
   const gate = at((step) => (textAt(step, "uses") ?? "").includes("db-serving"));
 
   // Order is the whole of the argument: a value read after the graded repo's
   // own install scripts have run is a value that repo could have rewritten.
   expect(pinned).toBeGreaterThan(-1);
+  expect(install).toBeGreaterThan(-1);
   expect(pinned).toBeLessThan(install);
   expect(install).toBeLessThan(gate);
+});
+
+/**
+ * The install is the second half of one door: dev-config's static gate takes
+ * the consumer's key through the call, and this job's install has to take the
+ * same key from the same secret, or a consumer with a private git dependency
+ * passes one job and dies in the next at `bun install` — on a step that never
+ * asked for a credential, over a dependency its manifest names.
+ *
+ * Pinned by full path and SHA like every other action here, and handed the
+ * secret and nothing else: the key's whole safety is that it is written, used
+ * and removed inside that action's own shell, so this job's part is to pass it
+ * there and nowhere else.
+ */
+test("the database job installs through dev-config's install, carrying the key", () => {
+  const step = jobSteps().find((each) => (textAt(each, "uses") ?? "").includes(INSTALL));
+  const uses = textAt(step, "uses") ?? "";
+
+  expect(uses).toMatch(/^gokayo43\/dev-config\/\.github\/actions\/install@[0-9a-f]{40}$/u);
+  expect(mapAt(step, "with")).toEqual({ "git-ssh-key": "${{ secrets['git-ssh-key'] }}" });
+  // And nothing in this job installs the other way any more: two installs are
+  // two answers to which dependencies this job graded, and the bare one takes
+  // no key.
+  expect(jobSteps().filter((each) => (textAt(each, "run") ?? "").includes("bun install"))).toEqual(
+    [],
+  );
 });
 
 /**
