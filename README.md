@@ -26,6 +26,52 @@ server rather than guessing. Both are certified by this repo's own suite, which
 runs every server-touching case against a real MariaDB and a real MySQL 8 in one
 run.
 
+## Where it runs
+
+Every job in `.github/workflows/check.yml` and in this repo's own `ci.yml`
+declares `runs-on: [self-hosted, linux]`, which is dev-config's own spelling of
+the same thing. **A consumer needs a runner carrying both labels.** Without one
+its jobs queue and GitHub cancels them 24 hours later, so what a consumer sees
+is a run that never started rather than one that failed naming the reason.
+
+What such a runner has to provide, beyond those two labels:
+
+- **A docker daemon it can reach.** The server the database job grades is a
+  container this workflow starts, and Redis is a service container beside it.
+- **Passwordless `sudo`**, for dev-config's test-suite gate inside the `static`
+  job — their
+  [docs/gates/test-suite.md](https://github.com/gokayo43/dev-config/blob/main/docs/gates/test-suite.md)
+  is what it is for and what a runner without it gets.
+- **Room for a workspace that is not discarded when the run ends.** What cleans
+  it is `actions/checkout` at the start of the next run.
+
+Three things follow from that machine being shared and persistent rather than a
+fresh cloud VM. Two of its jobs overlapping on one docker daemon is the ordinary
+case, not the corner one, and nothing in the database job may assume otherwise:
+
+- **Nothing publishes on a fixed host port, and nothing publishes on
+  `0.0.0.0`.** Redis is `ports: ["127.0.0.1::6379"]` with the assignment read
+  back out of the `job` context; the server is `docker run --publish
+127.0.0.1::3306` with the assignment read back and answered as the server
+  step's `database-url` output, so `DATABASE_URL` names the port docker assigned
+  and never `3306`. Why those two forms and not the obvious ones is
+  [docs/gates/db-server.md](docs/gates/db-server.md), "Why the port is the
+  daemon's".
+- **The app the serving gate boots gets an allocated port too.** `health-url`
+  defaults to `http://localhost:${PORT}/api/health`, where `PORT` is a free port
+  the job binds immediately before the gate runs and passes to the app; `3000`
+  is the framework default and therefore the port something else on a shared box
+  already holds. `PORT` is the platform convention, so an app that honours it
+  needs no further wiring. **A consumer that sets `health-url` names a port the
+  allocation cannot reach, so it owes that port to its app as well** — in
+  `start-command`, e.g. `env PORT=8080 bun run start`, since no input can
+  reference a value the job allocates while it runs. The boot gate refuses a
+  `health-url` something already answers rather than grading whatever that is.
+- **The job takes its server container down when it ends**, on every run
+  including the failed and the cancelled ones. A composite action has no `post:`
+  of its own, so without that step a persistent runner keeps one database server
+  per consumer workspace resident between runs.
+
 ## Calling it
 
 ```yaml
@@ -91,6 +137,7 @@ here**, where it runs against the server that consumer pinned.
 | --------------------- | --------- |
 | `build`               | `boolean` |
 | `affected`            | `boolean` |
+| `nightly`             | `boolean` |
 | `compose`             | `boolean` |
 | `mutation-lane`       | `boolean` |
 | `mutation-floor`      | `string`  |
@@ -112,7 +159,7 @@ here**, where it runs against the server that consumer pinned.
 | `route-allowlist`     | `string`  |
 | `datetime-allowlist`  | `string`  |
 
-The first ten are handed to dev-config's `check.yml` unchanged, so
+The first eleven are handed to dev-config's `check.yml` unchanged, so
 [its README](https://github.com/gokayo43/dev-config#ci) is the reference for
 what one does and for the conditions under which it refuses one. The inputs
 here carry no description of their own for that reason — a second copy of that
@@ -143,10 +190,12 @@ and fails on a type or default of this wrapper's own, on an input declared that
 nothing reads, and on a name this page has stopped accounting for.
 
 Every other input dev-config's `check.yml` declares is refused here rather than
-forwarded: `semantic-fixtures`, `timestamp-allowlist`, `backfill-seed` and
-`backfill-command`. Each is aimed at a step of the Postgres database job this
-workflow leaves off, and the jobs below are what will answer them for this
-family.
+forwarded: `semantic-fixtures`, `timestamp-allowlist`, `backfill-seed`,
+`backfill-command`, `fuzz-seed` and `route-retire`. Each is aimed at a step of
+the Postgres database job this workflow leaves off — theirs refuses all six on a
+call passing `database: external`, so forwarding one would be this workflow
+sending a consumer a refusal from a job they never asked for — and the jobs below
+are what will answer them for this family.
 
 `upgrade-gate` was on that list until dev-config stopped demanding its own
 upgrade gate of a caller passing `database: external`: the duty came here with
@@ -154,14 +203,18 @@ the value, and [docs/gates/db-upgrade.md](docs/gates/db-upgrade.md) is this
 workflow's answer to it for both products.
 
 Passing any input aimed at this repo's own database job without asking for that
-job is refused rather than ignored, which is what the `refusals` job is for.
-`start-command` and `health-url` are the two that cannot be asked that way —
-they carry a default rather than an empty one, so "the caller passed this" has
-no spelling a workflow can read — and
-[dev-config#66](https://github.com/gokayo43/dev-config/issues/66) is the same
-two going unrefused upstream. They are compared with their declared defaults
-here instead; `docs/gates/db-serving.md` names the one caller that leaves
-invisible.
+job is refused rather than ignored, which is what the `refusals` job is for. An
+input that defaults to empty is refused when it is non-empty, since a
+`workflow_call` input cannot be asked whether the caller passed it. Two here
+carry a value instead — `database-image`, so that a consumer running the server
+this repo certifies writes nothing, and `upgrade-gate`, which is a boolean —
+and those are compared with their declared defaults, which leaves exactly one
+caller invisible: the one who passes the default itself.
+`docs/gates/db-serving.md` names that hole rather than implying it is closed.
+`start-command` and `health-url` are not in it: both default to empty and take
+their real default in the database job, which is also the only place
+`health-url`'s could live, since it names a port that job allocates while it
+runs.
 
 `db-gate-evidence` is asked the same question this workflow's own job can ask:
 passing it with `database: none` fails the run rather than being ignored, since

@@ -4,7 +4,14 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { inputs, publish, relay, required } from "../.github/actions/_lib/annotations.ts";
+import {
+  inputs,
+  mask,
+  publish,
+  relay,
+  required,
+  stepOutput,
+} from "../.github/actions/_lib/annotations.ts";
 
 /**
  * The log protocol, which had no suite at all until this file: only `import
@@ -201,6 +208,99 @@ test("a table with nowhere to go is a wiring fault, raised after what it found",
   // found, and the failure would reach the log as a stack trace about a file
   // path.
   expect(commands(lines)).toEqual(["::error::a problem"]);
+});
+
+/**
+ * The mask, which is the one line here that is MEANT to be a command — and is
+ * still a command carrying a value the gate did not write: the server step masks
+ * the password out of the URL its calling job declared.
+ */
+test("a masked value is escaped like every other message this file writes", async () => {
+  const lines = await written(() => {
+    mask("p%ss\n::stop-commands::deadbeef");
+  });
+
+  // Written raw, the newline would end the mask and hand the runner the rest as
+  // a command of its own — the same class every case above is about, on the one
+  // path whose whole purpose is to be obeyed.
+  expect(lines).toEqual(["::add-mask::p%25ss%0A::stop-commands::deadbeef"]);
+  expect(commands(lines)).toHaveLength(1);
+});
+
+/**
+ * And the value that cannot be masked. The runner warns on an empty mask and
+ * replaces nothing, so asking is a line in every run's log that says the gate
+ * tried to hide something it did not have.
+ */
+test("the empty string is not masked at all", async () => {
+  expect(await written(() => mask(""))).toEqual([]);
+});
+
+/**
+ * The step output, which is how a gate answers its caller with a value the
+ * steps after it cannot rewrite — `db-server` names the port docker assigned.
+ */
+test("a step output is one name=value line, and a second call keeps the first", async () => {
+  const file = join(tmpdir(), `outputs-${Bun.randomUUIDv7()}.txt`);
+  Bun.env["GITHUB_OUTPUT"] = file;
+  try {
+    await stepOutput("database-url", "mysql://root:db-gate@127.0.0.1:33640/app");
+    await stepOutput("container", "db-gate-server-0123456789abcdef");
+
+    expect(await Bun.file(file).text()).toBe(
+      "database-url=mysql://root:db-gate@127.0.0.1:33640/app\ncontainer=db-gate-server-0123456789abcdef\n",
+    );
+  } finally {
+    delete Bun.env["GITHUB_OUTPUT"];
+    await rm(file, { force: true });
+  }
+});
+
+/**
+ * The line form ends at the first terminator the runner honours, so a value
+ * carrying one would arrive as an output the gate never wrote — the wrong
+ * implementation is the obvious one, a write with nothing asked of the value.
+ * All three terminators, because the runner reads its outputs the way it reads
+ * its log: a bare carriage return ends a line there too.
+ */
+test("a value carrying any line terminator is refused rather than written", async () => {
+  const file = join(tmpdir(), `outputs-${Bun.randomUUIDv7()}.txt`);
+  Bun.env["GITHUB_OUTPUT"] = file;
+  try {
+    for (const value of ["one\ntwo=three", "one\rtwo=three", "one\r\ntwo=three"]) {
+      // Caught rather than asserted on the promise, the way the table case
+      // above does: what a write that asked nothing of the value returns is a
+      // resolved promise, and `refused` staying undefined is what says so.
+      let refused: unknown;
+      try {
+        await stepOutput("database-url", value);
+      } catch (thrown) {
+        refused = thrown;
+      }
+      expect(String(refused)).toContain("the database-url output carries a line break");
+    }
+    // And nothing was written on the way to refusing.
+    expect(await Bun.file(file).exists()).toBe(false);
+  } finally {
+    delete Bun.env["GITHUB_OUTPUT"];
+    await rm(file, { force: true });
+  }
+});
+
+test("a gate answering with a value and no GITHUB_OUTPUT to write it to is refused by name", async () => {
+  const held = Bun.env["GITHUB_OUTPUT"];
+  delete Bun.env["GITHUB_OUTPUT"];
+  try {
+    let refused: unknown;
+    try {
+      await stepOutput("container", "db-gate-server-0123456789abcdef");
+    } catch (thrown) {
+      refused = thrown;
+    }
+    expect(String(refused)).toContain("GITHUB_OUTPUT is not set");
+  } finally {
+    if (held !== undefined) Bun.env["GITHUB_OUTPUT"] = held;
+  }
 });
 
 test("an input the action forgot to pass is refused by name", async () => {

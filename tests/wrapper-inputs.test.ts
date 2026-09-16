@@ -434,6 +434,63 @@ test("every action the wrapper pins ships the actions this repo has now", async 
   }
 });
 
+/** The step of a workflow's database job that runs a gate of the named action. */
+function gateStep(read: Read, action: string): Readonly<Record<string, string>> {
+  const steps = mapAt(mapAt(read.document, "jobs"), "database")["steps"];
+  const found = (isList(steps) ? steps : []).find((step) =>
+    (textAt(step, "uses") ?? "").includes(action),
+  );
+  if (found === undefined) throw new Error(`no step of the database job uses ${action}`);
+  const given = mapAt(found, "with");
+  return Object.fromEntries(
+    Object.entries(given).flatMap(([key, value]) =>
+      typeof value === "string" ? [[key, value] as const] : [],
+    ),
+  );
+}
+
+/**
+ * What a caller who wrote nothing gets, read off the `||` in the value a job
+ * hands its gate.
+ *
+ * The port is allocated while the job runs, so the only thing the two workflows
+ * can legitimately differ on is where that value is read from — dev-config's
+ * job spells it `env.PORT` and this one spells it as the allocating step's
+ * output, which the graded repo cannot rewrite. The placeholder is what makes
+ * the rest of the sentence comparable.
+ */
+function fallbackIn(value: string): string {
+  const fallback = /\|\|\s*(.*?)\s*\}\}\s*$/su.exec(value)?.[1];
+  if (fallback === undefined) {
+    throw new Error(`${value} names no value for a caller who passed nothing`);
+  }
+  return fallback.replace(/env\.PORT|steps\.[\w-]+\.outputs\.port/u, "<the allocated port>");
+}
+
+/**
+ * The two defaults that moved out of the input declarations and into the job.
+ *
+ * README and docs/gates/db-serving.md state them as this workflow's contract,
+ * and a default written in a job body is held to nothing — dev-config declares
+ * neither any more either, and applies both in its own database job. So the
+ * oracle is that job: a consumer moving between the two workflows writes one
+ * call either way, which is the same rule the input declarations above are held
+ * to, asked of the place the values actually live now.
+ */
+test("the serving gate's two defaults are the ones dev-config's own job applies", () => {
+  const ours = gateStep(wrapper, "actions/db-serving");
+  const theirs = gateStep(upstream, "actions/db-gate");
+
+  for (const name of ["start-command", "health-url"] as const) {
+    const mine = ours[name];
+    const upstreams = theirs[name];
+    if (mine === undefined || upstreams === undefined) {
+      throw new Error(`${name} is not handed to the gate by both jobs`);
+    }
+    expect(`${name}: ${fallbackIn(mine)}`).toBe(`${name}: ${fallbackIn(upstreams)}`);
+  }
+});
+
 /**
  * The server the job starts and the server the gate dumps from are one image,
  * and now they are one statement of it: both steps are handed the caller's

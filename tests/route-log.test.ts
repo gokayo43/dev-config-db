@@ -6,7 +6,7 @@ import {
   type Route as PublishedRoute,
   type RouteLog as PublishedRouteLog,
   type Served as PublishedServed,
-} from "@gokayo43/dev-config/route-log.ts";
+} from "@gokayo43/dev-config/route-log";
 
 import {
   ENDPOINT,
@@ -23,9 +23,9 @@ import {
  * `route-log.ts` under `.github/actions` is a copy for the reason every copy
  * here is one — an action runs from a checkout with no `node_modules` above it
  * — but unlike `annotations.ts` and `foreign.ts`, dev-config publishes this one:
- * it is in their `files` allowlist as `@gokayo43/dev-config/route-log.ts`,
- * because the app end of the contract imports it. A test resolves node_modules
- * normally, so the two ends can be held together here.
+ * it is an export of theirs, `@gokayo43/dev-config/route-log`, because the app
+ * end of the contract imports it. A test resolves node_modules normally, so the
+ * two ends can be held together here.
  *
  * A protocol whose two ends disagree is a floor grading a payload nobody sends.
  * The strings are compared at runtime; the three shapes are compared by the

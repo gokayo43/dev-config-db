@@ -28,8 +28,17 @@ the term says why.
 ## Boot
 
 `start-command` is how a repo starts its app and `health-url` is what this polls
-until it answers 200 — the two inputs a repo has to write, since everything else
-here is the same for every repo.
+until it answers 200 — the two inputs a repo writes when its app is not started
+and reached the way the defaults assume, since everything else here is the same
+for every repo.
+
+Both default to empty in the call and take their real value in the database job:
+`bun run start`, and `http://localhost:${PORT}/api/health` on the port that job
+allocated for the app. `PORT` is the platform convention, so an app that honours
+it needs neither input; an app that ignores it writes both. The port is
+allocated rather than fixed because the runner is a shared, persistent machine —
+README's "Where it runs" is the argument, and it is also why neither default
+could be declared as the input's own.
 
 A health route answers only once the process is up and a query has
 round-tripped, so a migration that applies and leaves the app unable to run
@@ -37,12 +46,25 @@ fails here: a column the model says is not null and the lineage left nullable,
 an enum the code selects on that no migration created, an index a startup query
 needs. Every one of those is a green replay and a dead deploy.
 
-The poll watches the process as well as the URL. A start command that dies on
+The poll watches the process as well as the URL, and the two are read together:
+a 200 counts as this app's answer only while the process this step started is
+alive to have served it, read out of `/proc` at the moment the answer arrives
+rather than out of the runtime, which learns of an exit as an event and learns
+it late. An app that answers and dies in the same breath is reported as having
+exited — it is not serving either way. A start command that dies on
 its first line otherwise looks exactly like a slow boot, and the run spends its
 whole bound before saying so — the diagnostic then names the app rather than the
 bound, and carries what the app itself wrote. Each attempt is bounded too, and
 never by longer than what is left of the whole bound: a process that accepts the
 connection and never answers is otherwise indistinguishable from a slow boot.
+
+**A `health-url` that already answers is refused before anything is started.**
+The step polls a URL to decide whether the app came up, and a 200 off a port
+something else on the machine already holds says nothing about the app — it says
+the runner is shared. Left alone, that is not one wrong verdict: it is a green
+boot, a probe and twenty ramp VUs, all run against a stranger while the app
+under grade never ran. A consumer meets this only by naming a `health-url` of
+its own; the job allocates a port for the app otherwise.
 
 A `health-url` that is not an http(s) URL is refused by name rather than polled.
 `localhost:3000/health` parses as a URL — with `localhost:` read as its scheme —
@@ -279,15 +301,18 @@ one with `database: none` fails the call rather than being ignored — a repo th
 has written out the routes it wants ramped, or the reasons a route cannot be, has
 said plainly that it expects a ramp.
 
-`start-command` and `health-url` are the two that cannot be asked the way the
-others are. A `workflow_call` input cannot be asked whether the caller passed it
-— `github.event.inputs` is not populated for one — so "the caller passed this" is
-spelled "the value is non-empty", which works for every input defaulting to `""`
-and cannot work for two carrying a value. They are compared with their declared
-defaults instead, and the suite holds the guard's copy of those defaults to what
-this workflow declares. dev-config#66 is the same two inputs going unrefused
-there, where the guard tests for emptiness alone; what is left uncovered here is
-one caller, named below.
+A `workflow_call` input cannot be asked whether the caller passed it —
+`github.event.inputs` is not populated for one — so "the caller passed this" is
+spelled "the value is non-empty". That works for every input defaulting to `""`
+and cannot work for one carrying a value, which is why `start-command` and
+`health-url` carry none: their real defaults live in the job, where the port in
+`health-url`'s could live anyway.
+
+Two inputs still carry a value, for reasons of their own — `database-image`, so
+that a consumer running the certified server writes nothing, and `upgrade-gate`,
+which is a boolean and has no empty spelling. Those are compared with their
+declared defaults instead, and the suite holds the guard's copy of each to what
+this workflow declares. What that leaves uncovered is one caller, named below.
 
 ## Evidence
 
@@ -343,10 +368,10 @@ gets trusted for things it never checked.
 - **A second program in the repo.** The floor covers the program
   `start-command` boots and only that one: another app in the same repo serves
   its own routes, has no instrument, and appears in no route table.
-- **A caller who passes `start-command` or `health-url` as exactly their
+- **A caller who passes `database-image` or `upgrade-gate` as exactly their
   declared defaults with `database: none`.** That value is indistinguishable
-  from the value a caller who wrote nothing gets, so it is ignored in silence
-  the way dev-config#66 describes. Everything else aimed at this job is refused.
+  from the value a caller who wrote nothing gets, so it is ignored in silence.
+  Everything else aimed at this job is refused.
 - **Anything about racing writers.** The ramp puts twenty virtual users on the
   app at once, and nothing here asserts anything about what happens when two of
   them meet in one row. That is a repo's own probe or its own suite, not this.

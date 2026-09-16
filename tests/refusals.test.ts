@@ -154,6 +154,19 @@ const AIMED_AT_THE_JOB = [
   ],
 ] as const;
 
+/**
+ * The inputs that carry a value rather than an empty default, and the whole of
+ * the reason they are compared rather than tested for emptiness.
+ *
+ * `database-image` carries one so that a consumer running the server this repo
+ * certifies writes nothing; `upgrade-gate` is a boolean, and `-n` is true of
+ * `false`. Every other input aimed at the job defaults to `""` — including
+ * `start-command` and `health-url`, whose real defaults live in the database
+ * job, which is the only place `health-url`'s could live at all since it names
+ * a port that job allocates while it runs.
+ */
+const COMPARED = ["database-image", "upgrade-gate"] as const;
+
 for (const [variable, input, value, because] of AIMED_AT_THE_JOB) {
   test(`${input} without the job it drives is refused rather than ignored`, async () => {
     const refused = await ran({ DATABASE: "none", [variable]: value });
@@ -191,6 +204,15 @@ test("a call carrying every misplaced input is told about every one of them", as
   }
 });
 
+/**
+ * Also the one caller this guard cannot see, and it is the same call: a
+ * `workflow_call` input cannot be asked whether the caller passed it —
+ * `github.event.inputs` is not populated for one — so a caller who passes
+ * exactly the declared default sends what a caller who wrote nothing sends, and
+ * `ran` seeds every input with its declared default. A second case spelling
+ * those defaults out would die to the same wrong implementation as this one.
+ * docs/gates/db-serving.md names the hole.
+ */
 test("a call that asks for neither passes, which is every consumer that has not adopted", async () => {
   const quiet = await ran({ DATABASE: "none" });
 
@@ -206,41 +228,28 @@ test("a call that asks for the job and lets every input default passes", async (
 });
 
 /**
- * The three inputs that carry a value rather than an empty default. Every other
- * input aimed at the job defaults to the empty string, so "the caller passed
- * it" is spelled "non-empty"; these three carry a value — two of them because a
- * consumer moving between the two workflows writes one call either way and the
- * defaults are dev-config's, and the third because a consumer running the
- * server this repo certifies should write nothing. So they are compared with
- * those defaults instead — which leaves exactly one caller invisible, and the
- * page says so rather than implying the hole is closed. dev-config#66 is the
- * two of them going unrefused upstream.
+ * The guard's copy of the two defaults in `COMPARED`, held to what the workflow
+ * declares — and the other half of that rule: an input the guard compares is an
+ * input that carries a value, and one that carries none is read as passed the
+ * moment it is non-empty. A default that grew on an input read the second way
+ * would make every caller who wrote nothing a caller who passed it.
  */
 test("the defaults the guard compares against are the defaults this workflow declares", () => {
   // Written twice on purpose — a workflow_call input's default is not readable
   // from a step — so the two statements are held together here instead. A drift
   // between them refuses every caller or none, and for the image it would refuse
   // the consumer who wrote nothing at all.
-  expect(STEP.env["START_COMMAND_DEFAULT"]).toBe(declaredDefault("start-command"));
-  expect(STEP.env["HEALTH_URL_DEFAULT"]).toBe(declaredDefault("health-url"));
-  expect(STEP.env["DATABASE_IMAGE_DEFAULT"]).toBe(declaredDefault("database-image"));
-  expect(STEP.env["UPGRADE_GATE_DEFAULT"]).toBe(declaredDefault("upgrade-gate"));
-});
-
-test("passing those exactly as they are declared is the one caller this cannot see", async () => {
-  const invisible = await ran({
-    DATABASE: "none",
-    START_COMMAND: declaredDefault("start-command"),
-    HEALTH_URL: declaredDefault("health-url"),
-    DATABASE_IMAGE: declaredDefault("database-image"),
-    UPGRADE_GATE: declaredDefault("upgrade-gate"),
-  });
-
-  // Not a wish: a workflow_call input cannot be asked whether the caller passed
-  // it, and `github.event.inputs` is not populated for one. The value is the
-  // same as the value a caller who wrote nothing gets, so there is nothing left
-  // to tell the two apart.
-  expect(invisible.status).toBe(0);
+  for (const input of COMPARED) {
+    const variable = `${input.toUpperCase().replaceAll("-", "_")}_DEFAULT`;
+    expect(`${variable}: ${String(STEP.env[variable])}`).toBe(
+      `${variable}: ${declaredDefault(input)}`,
+    );
+  }
+  const compared: readonly string[] = COMPARED;
+  const emptily = AIMED_AT_THE_JOB.map(([, input]) => input).filter(
+    (input) => !compared.includes(input),
+  );
+  expect(emptily.filter((input) => declaredDefault(input) !== "")).toEqual([]);
 });
 
 test("a bound with no probe under it is refused whether or not the job runs", async () => {

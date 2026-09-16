@@ -19,7 +19,7 @@ jobs:
   # is being reviewed. What the wrapper adds to that call — the pass-through — is
   # graded by tests/wrapper-inputs.test.ts, which the suite lane below runs.
   check:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@d1f756aacca92fd99a66ba3370f290c41cb36a22 # v0.51.5
+    uses: gokayo43/dev-config/.github/workflows/check.yml@97d521f411cb38877d9a58cae01cd1fa07b569b1 # v0.60.1
     with:
       # The contract wants the .env.example/.gitignore shape of a repo that has
       # an environment to document. This one has none to document: what it ships
@@ -39,8 +39,13 @@ jobs:
   # repo pins. A bun test cannot fetch a binary — the suite's lane has no
   # business doing so — and "it runs inside k6" is why the linter and knip skip
   # that file, which is not a reason for nothing to have executed it.
+  # The runner every job in this repo and in the workflow beside it declares —
+  # README's "Where it runs". Nothing here is an exception: what this job
+  # asserts is which branches of the shipped script ran and which routes its
+  # stub server was asked for, so a box that is also serving something else
+  # moves no assertion in it.
   ramp-script:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -25,6 +25,9 @@ on:
       affected:
         type: boolean
         default: false
+      nightly:
+        type: boolean
+        default: false
       compose:
         type: boolean
         default: false
@@ -92,11 +95,23 @@ on:
         type: string
         default: ""
       start-command:
+        description: >-
+          How the database job's boot step starts the app. Empty takes
+          `bun run start`, applied by that job rather than declared here — an
+          input carrying a default is non-empty for every caller, and the
+          refusals job below reads "the caller passed this" as "the value is
+          non-empty". dev-config declares it the same way, for the same reason.
         type: string
-        default: bun run start
+        default: ""
       health-url:
+        description: >-
+          What that step polls until it answers 200. Empty takes
+          `http://localhost:${PORT}/api/health`, applied by the database job —
+          `PORT` is the port that job allocates for the app, which is a value no
+          input default could state. README's "Where it runs" is why it is
+          allocated rather than fixed.
         type: string
-        default: http://localhost:3000/api/health
+        default: ""
       probe-command:
         type: string
         default: ""
@@ -127,10 +142,11 @@ permissions:
 
 jobs:
   static:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@d1f756aacca92fd99a66ba3370f290c41cb36a22 # v0.51.5
+    uses: gokayo43/dev-config/.github/workflows/check.yml@97d521f411cb38877d9a58cae01cd1fa07b569b1 # v0.60.1
     with:
       build: ${{ inputs.build }}
       affected: ${{ inputs.affected }}
+      nightly: ${{ inputs.nightly }}
       compose: ${{ inputs.compose }}
       mutation-lane: ${{ inputs['mutation-lane'] }}
       mutation-floor: ${{ inputs['mutation-floor'] }}
@@ -157,7 +173,11 @@ jobs:
   # what the body tests is a second statement of one rule, and the half that
   # gets forgotten is the guard. The body is the rule.
   refusals:
-    runs-on: ubuntu-latest
+    # A consumer needs a runner carrying both labels. Without one the job queues
+    # and is cancelled 24 hours later, so what a consumer sees is a run that
+    # never started rather than one that failed naming the reason — README's
+    # "Where it runs" is the whole of what a runner has to provide.
+    runs-on: [self-hosted, linux]
     timeout-minutes: 5
     steps:
       - env:
@@ -172,16 +192,14 @@ jobs:
           CAPACITY_SCRIPT: ${{ inputs['capacity-script'] }}
           CAPACITY_PATH: ${{ inputs['capacity-path'] }}
           ROUTE_ALLOWLIST: ${{ inputs['route-allowlist'] }}
-          # The three defaults above, written out a second time because a step
+          # The two defaults above, written out a second time because a step
           # cannot read an input's declared default. tests/refusals.test.ts
           # holds the pairs together; `changed_from_default` below is why they
           # are compared at all.
           # A boolean has no empty spelling either, so it is compared with its
-          # declared default like the two below rather than tested for being
+          # declared default like the image below rather than tested for being
           # non-empty. Quoted, because what a step reads is always a string.
           UPGRADE_GATE_DEFAULT: "false"
-          START_COMMAND_DEFAULT: bun run start
-          HEALTH_URL_DEFAULT: http://localhost:3000/api/health
           DATABASE_IMAGE_DEFAULT: mariadb:11.4@sha256:4f1d8d202fcf7bcb3902f63af09f9c1a050c2922a89652f22abaec0d4f015e83
           DATETIME_ALLOWLIST: ${{ inputs['datetime-allowlist'] }}
         shell: bash
@@ -211,13 +229,13 @@ jobs:
             return 0
           }
 
-          # The second shape, for the three inputs that carry a value rather
-          # than an empty default: a workflow_call input cannot be asked whether
-          # the caller passed it, so "passed" is spelled "differs from the
-          # default". That leaves one caller invisible — the one who passes
-          # exactly the default — which docs/gates/db-serving.md names rather
-          # than papers over, and dev-config#66 is two of the three going
-          # unrefused there, where the guard has only the first shape.
+          # The second shape, for the two inputs that carry a value rather than
+          # an empty default: a workflow_call input cannot be asked whether the
+          # caller passed it, so "passed" is spelled "differs from the default".
+          # That leaves one caller invisible — the one who passes exactly the
+          # default — which docs/gates/db-serving.md names rather than papers
+          # over. It is the shape to avoid where a real default can live in the
+          # job instead, which is where start-command's and health-url's do.
           changed_from_default() {
             if [ "$DATABASE" != external ] && [ "$2" != "$3" ]; then
               refuse "$1 needs database: external — $4, and this call leaves that job off"
@@ -237,16 +255,16 @@ jobs:
             "the ramp runs against the app the database job boots"
           needs_job route-allowlist "$ROUTE_ALLOWLIST" \
             "the route floor is measured across the database job's ramp"
+          needs_job start-command "$START_COMMAND" \
+            "it is how the database job's boot step starts the app"
+          needs_job health-url "$HEALTH_URL" \
+            "it is what the database job's boot step polls and what its ramp measures"
           needs_job datetime-allowlist "$DATETIME_ALLOWLIST" \
             "it waives columns the database job's DATETIME step grades"
           changed_from_default upgrade-gate "$UPGRADE_GATE" "$UPGRADE_GATE_DEFAULT" \
             "it adds a step to the database job, which replays the base ref's migrations"
           changed_from_default database-image "$DATABASE_IMAGE" "$DATABASE_IMAGE_DEFAULT" \
             "it is the server the database job starts, and this call starts none"
-          changed_from_default start-command "$START_COMMAND" "$START_COMMAND_DEFAULT" \
-            "it is how the database job's boot step starts the app"
-          changed_from_default health-url "$HEALTH_URL" "$HEALTH_URL_DEFAULT" \
-            "it is what the database job's boot step polls and what its ramp measures"
 
           # The one value of dev-config's enum this workflow does not serve. A
           # repo whose database is Postgres wants their check.yml rather than
@@ -267,7 +285,7 @@ jobs:
 
   database:
     if: inputs.database == 'external'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     timeout-minutes: 15
 
     # The database server is NOT here, and that is the one thing about this job
@@ -276,29 +294,29 @@ jobs:
     # holding `${{ inputs[…] }}` is read by dev-config's own pin gate as a
     # mutable tag and refused (gokayo43/dev-config#68). So the server is started
     # by a step instead, from the image the caller declared: db-server, first in
-    # the job, publishing on the loopback port DATABASE_URL below names, which
-    # is what a service container would have done.
+    # the job, publishing on a loopback port the docker daemon assigns and
+    # answering with the URL it is on, which is what a service container would
+    # have done.
     #
     # Redis stays a service and is started unconditionally: it is this
     # workflow's own pin rather than a consumer's, and a repo whose migrator
     # imports its own environment module gets that module's Redis check on the
     # way in, for the couple of seconds an idle container costs.
+    #
+    # `127.0.0.1::6379` is the `ip::containerPort` form: loopback, and a host
+    # port the daemon picks, for the reason docs/gates/db-server.md gives under
+    # "Why the port is the daemon's". The assignment is read back below, out of
+    # the `job` context.
     services:
       redis:
         image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
         ports:
-          - 6379:6379
+          - 127.0.0.1::6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 30
-
-    # 127.0.0.1 rather than localhost: a MySQL-family client reads that name as
-    # an instruction to use a unix socket, and the server is a container.
-    env:
-      DATABASE_URL: mysql://root:db-gate@127.0.0.1:3306/app
-      REDIS_URL: redis://127.0.0.1:6379
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -326,20 +344,22 @@ jobs:
       #
       # A step writes $GITHUB_ENV and $GITHUB_PATH and the runner folds both
       # into the environment of every LATER step; a step output cannot be
-      # rewritten once set. So a migrator that exports DATABASE_URL would
-      # otherwise choose which database the gates grade, and one that prepends a
-      # directory of its own would decide what `bun` and `docker` mean, and what
-      # `curl` and `sha256sum` mean to the ramp's pinned fetch — the gate's own
-      # code never executing, or its dumps taken by something that was never the
-      # server, or a "verified" k6 of that repo's choosing, and the step green in
-      # every case. None of them reaches a value captured before it ran. This is the same bar
-      # `_lib/annotations.ts` sets against `::stop-commands::` and
-      # `db-replay/database.ts` sets against a migrator's stdout: what the gate
-      # grades is not the graded repo's to decide.
+      # rewritten once set. So a migrator that prepended a directory of its own
+      # would otherwise decide what `bun` and `docker` mean, and what `curl` and
+      # `sha256sum` mean to the ramp's pinned fetch — the gate's own code never
+      # executing, or its dumps taken by something that was never the server, or
+      # a "verified" k6 of that repo's choosing, and the step green in every
+      # case. The database is read the same way and one step later, because the
+      # port it is on is docker's answer rather than this file's: the server
+      # step below publishes it and answers with the URL, as an output nothing
+      # afterwards can rewrite. None of the three reaches a value captured
+      # before the graded repo ran. This is the same bar `_lib/annotations.ts`
+      # sets against `::stop-commands::` and `db-replay/database.ts` sets
+      # against a migrator's stdout: what the gate grades is not the graded
+      # repo's to decide.
       - id: pinned
         run: |
           {
-            echo "database-url=$DATABASE_URL"
             echo "bun=$(command -v bun)"
             echo "path=$PATH"
           } >> "$GITHUB_OUTPUT"
@@ -348,13 +368,41 @@ jobs:
       # would have been: the server is a fact about this job rather than about
       # any one gate, and every step below connects to it. By full path and SHA
       # rather than `./` for the reason the steps below carry.
-      - uses: gokayo43/dev-config-db/.github/actions/db-server@28d44f7374042b20818c921131a07aec1c698a8c
+      - id: server
+        uses: gokayo43/dev-config-db/.github/actions/db-server@bcaf7b744afadf2980fc88588d52ae9375cb6e37
         with:
           database-image: ${{ inputs['database-image'] }}
-          database-url: ${{ steps.pinned.outputs['database-url'] }}
+          # The account, the password and the database every gate in this job
+          # uses, declared here and nowhere else — and no port, which the step
+          # refuses: docker assigns one and the step answers with this URL on
+          # it. 127.0.0.1 rather than localhost, because a MySQL-family client
+          # reads that name as an instruction to use a unix socket and the
+          # server is a container.
+          database-url: mysql://root:db-gate@127.0.0.1/app
           workspace: ${{ github.workspace }}
           bun: ${{ steps.pinned.outputs.bun }}
           path: ${{ steps.pinned.outputs.path }}
+
+      # The two servers this job's steps and the graded repo's own processes
+      # reach, on the ports neither of them chose.
+      #
+      # The service's assignment is read out of the `job` context, which carries
+      # it for a step and not for a job — a workflow naming one in `env:` at the
+      # job level is refused whole before any job starts, which is why the URLs
+      # are written here rather than there.
+      #
+      # Into the environment, because that is the one place the graded repo's
+      # own processes — its migrator, its app — can read them, and before the
+      # install for the same reason. The gates themselves take the database as
+      # the server step's output instead: the environment of a later step is
+      # something that repo's own steps can write to and an output is not.
+      - name: Name the ports this job's servers came up on
+        env:
+          DATABASE_URL: ${{ steps.server.outputs['database-url'] }}
+          REDIS_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}
+        run: |
+          set -euo pipefail
+          printf 'DATABASE_URL=%s\nREDIS_URL=%s\n' "$DATABASE_URL" "$REDIS_URL" >> "$GITHUB_ENV"
 
       - run: bun install --frozen-lockfile
 
@@ -378,10 +426,10 @@ jobs:
       # one value rather than two statements — the input — and
       # tests/wrapper-inputs.test.ts is what holds every step that takes an
       # image to it.
-      - uses: gokayo43/dev-config-db/.github/actions/db-replay@28d44f7374042b20818c921131a07aec1c698a8c
+      - uses: gokayo43/dev-config-db/.github/actions/db-replay@bcaf7b744afadf2980fc88588d52ae9375cb6e37
         with:
           database-image: ${{ inputs['database-image'] }}
-          database-url: ${{ steps.pinned.outputs['database-url'] }}
+          database-url: ${{ steps.server.outputs['database-url'] }}
           bun: ${{ steps.pinned.outputs.bun }}
           path: ${{ steps.pinned.outputs.path }}
 
@@ -391,10 +439,10 @@ jobs:
       # upgrade reaches against the schema the replay just built. Its own
       # database, on the same server, dropped whichever way it goes.
       - if: inputs['upgrade-gate']
-        uses: gokayo43/dev-config-db/.github/actions/db-upgrade@28d44f7374042b20818c921131a07aec1c698a8c
+        uses: gokayo43/dev-config-db/.github/actions/db-upgrade@bcaf7b744afadf2980fc88588d52ae9375cb6e37
         with:
           database-image: ${{ inputs['database-image'] }}
-          database-url: ${{ steps.pinned.outputs['database-url'] }}
+          database-url: ${{ steps.server.outputs['database-url'] }}
           bun: ${{ steps.pinned.outputs.bun }}
           path: ${{ steps.pinned.outputs.path }}
 
@@ -402,11 +450,40 @@ jobs:
       # migrations produced, so it needs the schema that step builds rather than
       # one written by hand. Its own pin, because an action and the workflow
       # pinning it are two commits — CLAUDE.md, "Releasing an action".
-      - uses: gokayo43/dev-config-db/.github/actions/db-datetime@28d44f7374042b20818c921131a07aec1c698a8c
+      - uses: gokayo43/dev-config-db/.github/actions/db-datetime@bcaf7b744afadf2980fc88588d52ae9375cb6e37
         with:
           datetime-allowlist: ${{ inputs['datetime-allowlist'] }}
-          database-url: ${{ steps.pinned.outputs['database-url'] }}
+          database-url: ${{ steps.server.outputs['database-url'] }}
           bun: ${{ steps.pinned.outputs.bun }}
+
+      # Immediately before the step that uses it, which is the whole of the
+      # bound: a port is held by binding it and let go so the app can take it,
+      # and everything between those two moments is a window for something else
+      # on a shared box to take it first. dev-config's own database job
+      # allocates here for the same reason.
+      #
+      # 3000 is the framework default and therefore the one port something else
+      # on such a box already holds, and it is also what two of these jobs would
+      # collide on. PORT is the platform convention, so an app that honours it
+      # needs no further wiring; one that does not sets start-command and
+      # health-url, and then owes its own port.
+      #
+      # Both a step output and a $GITHUB_ENV write, and the two are not the same
+      # value's two spellings: the app reads the environment, while the gate's
+      # own health-url is built from the OUTPUT — which the graded repo's later
+      # steps cannot rewrite, as anything in $GITHUB_ENV can be. That is a
+      # deliberate delta from dev-config, whose job spells the same default
+      # `env.PORT`.
+      - id: app
+        name: Allocate a port for the app
+        run: |
+          set -euo pipefail
+          # The ${} below is a JS template literal, not a shell expansion.
+          # shellcheck disable=SC2016
+          port=$(bun -e 'const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+                         console.log(s.port); s.stop(true);')
+          echo "port=$port" >> "$GITHUB_OUTPUT"
+          echo "PORT=$port" >> "$GITHUB_ENV"
 
       # Migrations applying says nothing about whether an app can run against
       # what they built, a route table answering says nothing about whether any
@@ -414,10 +491,20 @@ jobs:
       # under load. A step of this job rather than a job of its own, for the
       # reason CONTEXT.md gives at "A database job". docs/gates/db-serving.md is
       # the page.
-      - uses: gokayo43/dev-config-db/.github/actions/db-serving@28d44f7374042b20818c921131a07aec1c698a8c
+      - uses: gokayo43/dev-config-db/.github/actions/db-serving@bcaf7b744afadf2980fc88588d52ae9375cb6e37
         with:
-          start-command: ${{ inputs['start-command'] }}
-          health-url: ${{ inputs['health-url'] }}
+          # Both defaults live here, in the job that reads them, and health-url's
+          # could live nowhere else: the port is not known until the step above
+          # has run, so that default is a value only this job can build.
+          # start-command's could have been an input default and must not be —
+          # an input carrying one is non-empty for every caller, and the refusals
+          # job reads "the caller passed this" as "the value is non-empty", so
+          # these two would be the only inputs aimed at this job that it could
+          # not refuse when the job is off. `||` is what an empty input means,
+          # which is what a caller who said nothing sends. dev-config's database
+          # job carries the same pair for the same reasons.
+          start-command: ${{ inputs['start-command'] || 'bun run start' }}
+          health-url: ${{ inputs['health-url'] || format('http://localhost:{0}/api/health', steps.app.outputs.port) }}
           probe-command: ${{ inputs['probe-command'] }}
           probe-timeout: ${{ inputs['probe-timeout'] }}
           capacity-script: ${{ inputs['capacity-script'] }}
@@ -469,3 +556,42 @@ jobs:
             ${{ runner.temp }}/route-log-after.json
           # Each of these is written by a step that may not have been reached.
           if-no-files-found: ignore
+
+      # The server this job started, taken down by the job that started it.
+      #
+      # A composite action cannot do this for itself: `post:` belongs to
+      # JavaScript and Docker actions, and every action here is a composite one
+      # — so a container started by a step outlives the job unless a step of the
+      # job removes it. On a runner that is thrown away that costs nothing; on a
+      # shared, persistent one it is a database server per consumer workspace,
+      # resident forever, holding the last run's replayed schemas on a published
+      # loopback port. The server step reclaims the name before it creates, so
+      # what this prevents is the residency rather than the next run.
+      #
+      # `always()` for the reason the upload above carries: the runs whose
+      # server is most worth removing are the ones that failed or hit the job's
+      # own timeout. Last, so the evidence is published before anything is torn
+      # down.
+      #
+      # Redis is the runner's to remove — it is a service container, and the
+      # runner stops it with the job.
+      - name: Take the server down
+        if: ${{ always() }}
+        env:
+          CONTAINER: ${{ steps.server.outputs.container }}
+        run: |
+          set -euo pipefail
+          # Empty when the server step never ran — a checkout that failed, a
+          # cancelled job — and that is a job with no container rather than a
+          # state to report. Asked because `docker rm` refuses an empty name
+          # (exit 1, "container name cannot be empty"), which would fail a job
+          # over having nothing to clean up.
+          if [ -z "$CONTAINER" ]; then
+            echo "no server was started by this job"
+            exit 0
+          fi
+          # No `|| true` under it: `--force` on a name docker does not know is
+          # idempotent — it says so on stderr and exits 0 (probed on docker
+          # 29.1.3) — so a server that died before this step is already the
+          # outcome this step wants.
+          docker rm --force "$CONTAINER" >/dev/null

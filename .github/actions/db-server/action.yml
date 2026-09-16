@@ -1,9 +1,10 @@
 name: Database server
 description: >-
   Starts the server the rest of the database job grades, from the image the
-  consuming repo pinned, and waits until it answers a query on the URL the
-  calling job declared. Either server product this repo serves is one image
-  reference here — nothing in this step reads a product name out of it.
+  consuming repo pinned, waits until it answers a query on the loopback port
+  docker assigned it, and answers with the URL it is on. Either server product
+  this repo serves is one image reference here — nothing in this step reads a
+  product name out of it.
   docs/gates/db-server.md is what it proves and what it cannot catch.
 
 inputs:
@@ -16,11 +17,14 @@ inputs:
     required: true
   database-url:
     description: >-
-      The database the gates after this step use, as the calling job read it
-      before running a line of the graded repo's code. It is also this step's
-      own instruction: the port it publishes on, the root password the image
-      initialises with, and the database it creates are read from it, so no two
-      steps can disagree about which server was started.
+      The database the gates after this step use, as the calling job declared it
+      before running a line of the graded repo's code: the root password the
+      image initialises with and the database it creates are read from it, so no
+      two steps can disagree about which server was started. It carries no PORT,
+      and a URL that does is refused — docker publishes the server on a loopback
+      port of its own choosing, which is what keeps two jobs sharing one daemon
+      off each other's. The `database-url` output below is this value on that
+      port, and it is what every later step connects to.
     required: true
   workspace:
     description: >-
@@ -43,10 +47,28 @@ inputs:
       nothing in it pins which program is asked to run that image.
     required: true
 
+outputs:
+  database-url:
+    description: >-
+      The server this step started, as the gates after it reach it: the URL the
+      calling job declared, on the loopback port docker assigned. A step output
+      rather than a $GITHUB_ENV write, because the runner folds one of those
+      into every later step and a graded repo's own steps run in between — an
+      output cannot be rewritten once set.
+    value: ${{ steps.server.outputs['database-url'] }}
+  container:
+    description: >-
+      The container this step created, named after the calling job's workspace.
+      Answered whether or not the server came up, because what reads it is the
+      job's own removal step — a composite action has no `post:` of its own, so
+      a container started here outlives the job unless the job takes it down.
+    value: ${{ steps.server.outputs.container }}
+
 runs:
   using: composite
   steps:
-    - name: Start the server this job grades
+    - id: server
+      name: Start the server this job grades
       shell: bash
       # The action's own checkout, never the graded repo's. `bun` reads a
       # top-level `preload` out of a `bunfig.toml` in its working directory, so a

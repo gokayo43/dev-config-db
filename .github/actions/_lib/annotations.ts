@@ -26,6 +26,10 @@
 //   * `entry` escapes the caught error — see there.
 //   * `publish` relays the log through `relay` rather than printing it — see
 //     there. Upstream prints it raw, which is dev-config#71's second half.
+//   * `mask` and `stepOutput` have no upstream counterpart: no gate there answers
+//     its caller with a value, and one here does — the server step, which is
+//     handed a credential and names the port docker gave it. Both are the
+//     runner's protocol, which is what this file is for.
 
 import { appendFile } from "node:fs/promises";
 
@@ -167,6 +171,48 @@ export async function publish(
 }
 
 /**
+ * A value GitHub replaces with `***` everywhere it appears in this run's log,
+ * its annotations and its outputs, from this line on.
+ *
+ * Asked for before the value is published rather than after: the runner applies
+ * a mask to what it has not yet written, and a secret already on the log stays
+ * there. Empty is not maskable and asking would mask nothing, loudly — the
+ * runner warns — so it is skipped.
+ */
+export function mask(value: string): void {
+  if (value === "") return;
+  console.log(`::add-mask::${commanded(value)}`);
+}
+
+/**
+ * A step output, written in the `name=value` form the runner reads off
+ * $GITHUB_OUTPUT.
+ *
+ * A step output rather than a $GITHUB_ENV write is the difference between a
+ * value a later step can rewrite and one it cannot, which is the whole reason a
+ * gate would answer with one — `db-server/server.main.ts` is the caller and
+ * carries that argument.
+ *
+ * A value carrying a line terminator is refused rather than encoded: the line
+ * form ends at the first one, so what followed would arrive as its own
+ * `name=value` — a step output the gate never wrote. The runner's heredoc form
+ * is what such a value would need, and nothing here has one; a gate that grows
+ * one adds that form here rather than reaching around this function.
+ */
+export async function stepOutput(name: string, value: string): Promise<void> {
+  if (ENDS_A_LINE.test(value)) {
+    throw new Error(
+      `the ${name} output carries a line break, and the name=value form the runner reads ends at one — whatever followed would arrive as an output of its own`,
+    );
+  }
+  const file = required(
+    "GITHUB_OUTPUT",
+    "a gate that answers its caller with a value writes it where the runner reads step outputs",
+  );
+  await appendFile(file, `${name}=${value}\n`);
+}
+
+/**
  * The work a `*.main.ts` hands over, so that a gate which throws — an input the
  * action forgot to pass, a database refusing the connection, a dump tool that is
  * not there — reaches the log as the annotation GitHub renders on the step
@@ -210,7 +256,7 @@ export function inputs<const Names extends readonly string[]>(
     if (value === undefined) throw new Error(`${variable} is not set — the action must pass it`);
     return [name, value];
   });
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fromEntries answers a string-keyed record; that its keys are exactly `names` is what the signature promises and what no inference can express
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- fromEntries answers a string-keyed record; that its keys are exactly `names` is what the signature promises and what no inference can express
   return Object.fromEntries(read) as Record<Names[number], string>;
 }
 

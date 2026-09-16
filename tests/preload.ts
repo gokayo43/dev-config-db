@@ -1,3 +1,4 @@
+// oxlint-disable-next-line no-restricted-imports -- the per-case hook this file exists to register: an app writes its pid into a project a case made, and both have to go before the next case starts. `await using` in the case cannot reach either, since what a case holds is a path it handed to a gate rather than a value
 import { afterAll, afterEach } from "bun:test";
 
 import { removeCheckouts } from "./action-step.ts";

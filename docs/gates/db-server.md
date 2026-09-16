@@ -50,6 +50,16 @@ What it buys back is that the wait is this repo's code rather than a health
 command in YAML: it is graded by `tests/server.test.ts` against both products,
 including the ways it can go wrong.
 
+**The container is the job's to remove, and `check.yml`'s last step is where.**
+A composite action has no `post:` — that belongs to JavaScript and Docker
+actions — so nothing in this step can take its own container down afterwards. A
+runner that is thrown away made that invisible; a persistent one turns it into a
+database server per consumer workspace, resident between runs with the last
+run's replayed schemas in it, on a published loopback port. The removal runs
+under `always()`, because the runs whose server is most worth removing are the
+ones that failed or hit the job's own timeout. The reclaim at the top of this
+step stays: it is what a run that was killed outright leaves behind.
+
 ## What it does
 
 1. Reclaims the container name — `db-gate-server-<digest of the job's
@@ -59,13 +69,16 @@ rm --force`: on a self-hosted runner two jobs share one docker daemon, and
    under one constant name each would kill the other's server mid-gate. A runner
    agent runs one job at a time and each has its own `_work` root, so the
    workspace separates concurrent jobs while staying the same across re-runs.
-2. Starts the image, publishing 3306 on the loopback port `database-url` names,
-   with the root password and the database name read out of that same URL. The
-   environment variables are `MYSQL_ROOT_PASSWORD` and `MYSQL_DATABASE`, which
-   are the two names **both** images read — the MariaDB image keeps them for
-   compatibility, and no MySQL image has ever had the `MARIADB_` spellings.
-3. Polls until a query answers, and reports the server's own `version()` in the
-   note it leaves behind.
+2. Starts the image with `--publish 127.0.0.1::3306` — loopback, and a host port
+   the docker daemon assigns — then reads that assignment back out of
+   `docker port`. The root password and the database name come out of
+   `database-url`, through `MYSQL_ROOT_PASSWORD` and `MYSQL_DATABASE`: the two
+   names **both** images read, since the MariaDB image keeps them for
+   compatibility and no MySQL image has ever had the `MARIADB_` spellings.
+3. Polls until a query answers, reports the server's own `version()` and the
+   port it came up on in the note it leaves behind, and answers with that URL as
+   its `database-url` output — which is what every later step of the job
+   connects to, and what the app is given through the environment.
 
 The poll is a query rather than a ping through the image's client, and that is
 what makes this one step rather than two shapes of one: the products have no
@@ -74,15 +87,42 @@ a temporary server with networking off while they initialise, so a port that
 answers is a server past that, and a query proves the account and the database
 the later gates were handed are the ones this container came up with.
 
+## Why the port is the daemon's
+
+A fixed host port is single-occupancy, and on a shared, persistent runner two
+jobs overlapping on one docker daemon is the ordinary case — the second to start
+would die with docker's own "port is already allocated", which a consumer reads
+as their own call being wrong. Publishing on `127.0.0.1` matters for a second
+reason: a bare `3306:3306` binds `0.0.0.0`, and the DNAT rule docker installs
+carries no destination match, so the container answers on the box's public
+address whatever the host firewall says. README's "Where it runs" is where both
+are argued for the workflow as a whole.
+
+An image serving on a port other than 3306 is not one of the ways this goes
+wrong here: docker creates the mapping when the container starts, whatever the
+image goes on to listen on — probed, `alpine sleep 30` answers
+`127.0.0.1:33621` while running — so such an image is a mapping that answers
+nothing, and the poll below reports it as a server that never answered. The only
+way to have no mapping at all is a container that is gone.
+
+So nothing names a port: the step publishes for the daemon to assign, reads the
+assignment back, and answers with the URL it is on. That answer is a step
+**output** rather than a `$GITHUB_ENV` write, because the runner folds one of
+those into every later step and the graded repo's own steps run in between — an
+output cannot be rewritten once set, so the database the gates grade stays the
+database this step started.
+
 ## What it refuses
 
 - **An empty `database-image`.** A composite action maps a missing input to the
   empty string, so `required: true` is a promise nothing enforces at runtime.
+- **A `database-url` naming a port.** The port belongs to the daemon, and a URL
+  carrying one names a server this step is not the one publishing.
 - **A `database-url` naming a host this step does not publish on**, or an
   account the image never creates. Neither is something the step could satisfy
   by trying harder: it publishes on 127.0.0.1, and the image initialises exactly
-  one account from the password it is given. `check.yml` passes neither; a
-  caller running the action directly is who they are for.
+  one account from the password it is given. `check.yml` passes none of the
+  three; a caller running the action directly is who they are for.
 - **A container that came up and stopped**, with the server's own output relayed
   under it. This is the failure a service container could not have: the runner
   would have refused to start the job. Reported as what it is rather than as a

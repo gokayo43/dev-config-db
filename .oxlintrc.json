@@ -6,6 +6,30 @@
   "overrides": [
     {
       "files": [
+        ".github/actions/_lib/annotations.ts",
+        ".github/actions/db-replay/database.ts",
+        ".github/actions/db-server/server.ts",
+        ".github/actions/db-serving/boot.ts",
+        ".github/actions/db-serving/probe.ts",
+        ".github/actions/db-serving/ramp.ts"
+      ],
+      "rules": {
+        // `annotations.ts` is this repo's `env.ts` under another name:
+        // `inputs()` and `required()` are the choke point the rule asks for, and
+        // both throw on a value they cannot read rather than defaulting. A gate
+        // runs from an action's own checkout with no install above it, so the
+        // module a consuming repo would import cannot be reached from here
+        // anyway. The other five forward the environment they were started with
+        // to a child process — `{ ...process.env, … }` for a docker command, an
+        // app, a probe or a k6 run — which reads no variable and has none to
+        // validate. Named one file at a time so a seventh reader fails rather
+        // than joining a glob, which is how dev-config answers the same rule in
+        // its own tree.
+        "anti-slop/no-env-access": "off"
+      }
+    },
+    {
+      "files": [
         ".github/actions/_lib/foreign.ts",
         ".github/actions/db-replay/database.ts",
         ".github/actions/db-serving/route-coverage.ts",
