@@ -27,7 +27,7 @@
     "lefthook": "2.1.12",
     "mysql2": "3.24.4",
     "oxfmt": "0.67.0",
-    "oxlint": "1.83.0",
+    "oxlint": "1.85.0",
     "oxlint-tsgolint": "7.0.2001",
     "typescript": "7.0.2"
   },
