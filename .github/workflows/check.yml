@@ -156,7 +156,7 @@ permissions:
 
 jobs:
   static:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@97d521f411cb38877d9a58cae01cd1fa07b569b1 # v0.60.1
+    uses: gokayo43/dev-config/.github/workflows/check.yml@202552b7c2459bf12fbd8a32405308ee879b8c9d # v0.68.0
     with:
       build: ${{ inputs.build }}
       affected: ${{ inputs.affected }}
@@ -327,7 +327,7 @@ jobs:
     # the `job` context.
     services:
       redis:
-        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
         ports:
           - 127.0.0.1::6379
         options: >-
@@ -434,7 +434,7 @@ jobs:
       # their host-key lookup is made with, the second is where GitHub publishes
       # those keys, and neither is a fact a consumer of this workflow has an
       # answer to.
-      - uses: gokayo43/dev-config/.github/actions/install@05488dabca760939e06e21ddaa99c661c4a45fad # v0.60.0
+      - uses: gokayo43/dev-config/.github/actions/install@202552b7c2459bf12fbd8a32405308ee879b8c9d # v0.68.0
         with:
           git-ssh-key: ${{ secrets['git-ssh-key'] }}
 
