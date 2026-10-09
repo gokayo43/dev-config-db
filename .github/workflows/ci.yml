@@ -19,7 +19,7 @@ jobs:
   # is being reviewed. What the wrapper adds to that call — the pass-through — is
   # graded by tests/wrapper-inputs.test.ts, which the suite lane below runs.
   check:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@97d521f411cb38877d9a58cae01cd1fa07b569b1 # v0.60.1
+    uses: gokayo43/dev-config/.github/workflows/check.yml@202552b7c2459bf12fbd8a32405308ee879b8c9d # v0.68.0
     with:
       # The contract wants the .env.example/.gitignore shape of a repo that has
       # an environment to document. This one has none to document: what it ships
