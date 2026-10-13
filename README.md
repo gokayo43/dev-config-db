@@ -66,7 +66,7 @@ case, not the corner one, and nothing in the database job may assume otherwise:
   the default is `http://localhost:${PORT}/api/health`, and an app whose health
   route is elsewhere writes `health-url: http://localhost:${PORT}/api/v1/health`
   and names no port at all. Nothing else in the value is expanded — `$PORT`
-  stays four characters. **A `health-url` without the placeholder names a port
+  stays five characters. **A `health-url` without the placeholder names a port
   the allocation cannot reach, so the caller owes that port to its app as
   well** — in `start-command`, e.g. `env PORT=8080 bun run start` — and two
   overlapping runs of that caller collide on it. The boot gate refuses a
@@ -178,7 +178,13 @@ spells the same ten, and mean here what they mean there against another server:
 `db-gate-evidence` names the artifact it leaves behind, and the seven after them
 aim its boot, probe and ramp steps —
 [docs/gates/db-serving.md](docs/gates/db-serving.md) is what each one does. A
-consumer that moves between the two workflows writes one call either way.
+consumer that moves between the two workflows writes one call either way, with
+one exception: `health-url` here also takes the `${PORT}` placeholder, and
+dev-config's job does not replace it — there a URL carrying it is malformed,
+`curl` exits 3 on it, and the boot step polls it until its 60 s bound runs out.
+A call that writes the placeholder is a call to this workflow until dev-config
+adopts the same rule, which
+[dev-config#99](https://github.com/gokayo43/dev-config/issues/99) proposes.
 
 Two are names dev-config has no use for. `datetime-allowlist` is the type this
 family gets wrong where Postgres gets it right: their `timestamp-allowlist`

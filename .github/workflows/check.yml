@@ -109,7 +109,7 @@ on:
           replaced with the port the database job allocates for the app, so a
           route other than the default's is written as
           `http://localhost:${PORT}/api/v1/health` and the app still boots on a
-          port nothing else holds. Empty takes
+          port nothing else held when the job allocated it. Empty takes
           `http://localhost:${PORT}/api/health`, applied by that job. A URL
           without the placeholder is polled as written, and names a port the
           caller then owes its app. README's "Where it runs" is why the port is
@@ -520,12 +520,11 @@ jobs:
         name: Allocate a port for the app
         env:
           HEALTH_URL: ${{ inputs['health-url'] || 'http://localhost:${PORT}/api/health' }}
+          BUN: ${{ steps.pinned.outputs.bun }}
         run: |
           set -euo pipefail
-          # The ${} below is a JS template literal, not a shell expansion.
-          # shellcheck disable=SC2016
-          port=$(bun -e 'const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
-                         console.log(s.port); s.stop(true);')
+          port=$("$BUN" -e 'const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+                            console.log(s.port); s.stop(true);')
           # The substitution rule, and the only one: every literal `${PORT}` in
           # the URL becomes the port allocated above, the port the app is handed
           # as PORT. Nothing else in it is expanded — the value is the caller's

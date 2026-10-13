@@ -103,9 +103,11 @@ test("a 200 from something else on the box is not this app's boot", async () => 
     // sending its reader to look for a slow boot.
     expect(verdict.problems[0]).toContain("already answers");
     expect(verdict.problems[0]).toContain("started nothing yet");
-    // And the way out that keeps the caller's route: the placeholder the job
-    // writes its allocated port into.
-    expect(verdict.problems[0]).toContain("Write ${PORT} in health-url");
+    // And the way out for both callers who meet it: the one naming a fixed
+    // port is sent to the placeholder, and the one already using it — whose
+    // allocated port was handed out again — is told to rerun.
+    expect(verdict.problems[0]).toContain("write ${PORT} where the port goes");
+    expect(verdict.problems[0]).toContain("rerun the job");
     expect(verdict.note).toBeUndefined();
   } finally {
     await stranger.stop(true);

@@ -67,8 +67,12 @@ The step polls a URL to decide whether the app came up, and a 200 off a port
 something else on the machine already holds says nothing about the app — it says
 the runner is shared. Left alone, that is not one wrong verdict: it is a green
 boot, a probe and twenty ramp VUs, all run against a stranger while the app
-under grade never ran. A consumer meets this only by naming a port of its own
-in `health-url`; the job allocates one for the app otherwise.
+under grade never ran. A consumer meets this by naming a port of its own in
+`health-url`. One writing `${PORT}` gets a port nothing held when the job
+allocated it, but the job lets go of that port so the app can bind it, and the
+kernel can hand it out again in between
+([dev-config#123](https://github.com/gokayo43/dev-config/issues/123), item 2);
+that collision is rare and fails here, loudly, rather than grading a stranger.
 
 A `health-url` that is not an http(s) URL is refused by name rather than polled.
 `localhost:3000/health` parses as a URL — with `localhost:` read as its scheme —

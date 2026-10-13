@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 
 import { isList, mapAt, textAt } from "../.github/actions/_lib/foreign.ts";
 
-import { checkout } from "./action-step.ts";
+import { checkout, decoy } from "./action-step.ts";
 import { WRAPPER, wrapperDocument } from "./workflow.ts";
 
 /**
@@ -58,13 +58,22 @@ function linesOf(text: string): Map<string, string> {
   );
 }
 
-async function allocated(passed: string): Promise<Allocated> {
+/**
+ * The step under bash with the environment the runner gives it. `onPath` is a
+ * directory the graded repo prepended to PATH through `$GITHUB_PATH` before
+ * this step ran — its install, build and migrator all run first.
+ */
+async function allocated(passed: string, onPath?: string): Promise<Allocated> {
   const where = await checkout({ output: "", env: "" });
+  const path = `${dirname(process.execPath)}:${process.env["PATH"] ?? ""}`;
   const proc = Bun.spawn(["bash", "-c", STEP.script], {
     cwd: where,
     env: {
       ...process.env,
-      PATH: `${dirname(process.execPath)}:${process.env["PATH"] ?? ""}`,
+      PATH: onPath === undefined ? path : `${onPath}:${path}`,
+      // What the `pinned` step read at the top of the job, before the graded
+      // repo ran anything.
+      BUN: process.execPath,
       HEALTH_URL: healthUrlFor(passed),
       GITHUB_OUTPUT: `${where}/output`,
       GITHUB_ENV: `${where}/env`,
@@ -145,4 +154,17 @@ test("a job allocating while another job's app holds its port gets a port of its
 
   expect(second.port).not.toBe(first.port);
   expect(second.healthUrl).toBe(`http://localhost:${second.port}/api/v1/health`);
+});
+
+/**
+ * The step now writes the URL every gate polls, so what it runs is the gate's
+ * to choose: a `bun` the graded repo put first on PATH would decide the port
+ * and the URL both. The plausible wrong implementation is the bare `bun` this
+ * step used to run, which a decoy that prints nothing turns into an empty port.
+ */
+test("the port is allocated by the interpreter the job pinned, not one the graded repo put on PATH", async () => {
+  const { port, healthUrl } = await allocated("", await decoy("bun"));
+
+  expect(Number.isInteger(port) && port > 0 && port < 65_536).toBe(true);
+  expect(healthUrl).toBe(`http://localhost:${port}/api/health`);
 });

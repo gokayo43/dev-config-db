@@ -59,7 +59,11 @@ const ACTIONS = ".github/actions";
  * Every other input here is dev-config's, either handed on or spelled the way
  * they spell the same idea — and the tests below hold each of those to their
  * type and default, so that a consumer moving between the two workflows writes
- * one call either way. This map is the exception, and it is small on purpose:
+ * one call either way — except a `health-url` carrying `${PORT}`, which this
+ * workflow replaces with the allocated port and dev-config's job polls as a
+ * malformed URL until dev-config#99 lands. That is a value one input takes
+ * here and not there, rather than a name, so it is not in this map; README's
+ * input surface names it. This map is the exception, and it is small on purpose:
  * an input earns a place in it only when the fact it names is this family's own
  * and borrowing dev-config's spelling would name the wrong thing.
  * `datetime-allowlist` is one, and docs/gates/db-datetime.md is why;
