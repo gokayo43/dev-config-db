@@ -136,6 +136,14 @@ that has been improved says so at the line that improved it.
   `serving-job.test.ts` grades the wiring no gate can see from inside: which
   steps the job runs, what the app is given, whether every file a step leaves in
   the runner is actually uploaded, and that every step declares the pins above.
+  `app-port.test.ts` runs the job's own step that allocates the app's port: it
+  runs the pinned interpreter rather than a `bun` on PATH, the app and every
+  gate are handed one port, each `${PORT}` in a caller's
+  `health-url` becomes it and nothing else there expands, and a job allocating
+  while another job's app holds its port gets one of its own.
+  `hook-env.test.ts` runs lefthook's pre-push suite command with GIT_DIR set,
+  which is how git starts a hook from a linked worktree, and requires the
+  repository it names to come out untouched.
   `action-steps.test.ts` and `serving-steps.test.ts` run the shipped `run:`
   blocks against a checkout that fights back — a `bunfig.toml` preloading its
   own code, a `DATABASE_URL` naming a database of its own, a `bun` or a `docker`

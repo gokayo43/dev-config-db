@@ -168,11 +168,12 @@ export async function bootGate({ root, command, url, log, seconds }: Boot): Prom
   //
   // Refused rather than waited out, because nothing about it improves with
   // time. The database job allocates the port it polls, so a consumer that
-  // meets this is one whose health-url names a port of its own.
+  // meets this is one whose health-url names a port of its own, or one whose
+  // allocated port was handed out again before the app could bind it.
   if (await answers(url, ATTEMPT_MS)) {
     return {
       problems: [
-        `${url} already answers, and this step has started nothing yet — so something else on this machine is serving it, and a 200 from it would be this step reporting a boot that never happened. Leave health-url unset and the job allocates a port for the app, or name one nothing else on the runner holds.`,
+        `${url} already answers, and this step has started nothing yet — so something else on this machine is serving it, and a 200 from it would be this step reporting a boot that never happened. If health-url names a fixed port, write \${PORT} where the port goes, or leave it unset, and the job allocates one for the app. If it already does, the port the job allocated was taken again before this step: rerun the job.`,
       ],
     };
   }

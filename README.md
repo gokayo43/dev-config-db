@@ -57,15 +57,19 @@ case, not the corner one, and nothing in the database job may assume otherwise:
   and never `3306`. Why those two forms and not the obvious ones is
   [docs/gates/db-server.md](docs/gates/db-server.md), "Why the port is the
   daemon's".
-- **The app the serving gate boots gets an allocated port too.** `health-url`
-  defaults to `http://localhost:${PORT}/api/health`, where `PORT` is a free port
-  the job binds immediately before the gate runs and passes to the app; `3000`
-  is the framework default and therefore the port something else on a shared box
-  already holds. `PORT` is the platform convention, so an app that honours it
-  needs no further wiring. **A consumer that sets `health-url` names a port the
-  allocation cannot reach, so it owes that port to its app as well** — in
-  `start-command`, e.g. `env PORT=8080 bun run start`, since no input can
-  reference a value the job allocates while it runs. The boot gate refuses a
+- **The app the serving gate boots gets an allocated port too.** The job binds a
+  free port immediately before the gate runs and passes it to the app as `PORT`;
+  `3000` is the framework default and therefore the port something else on a
+  shared box already holds. `PORT` is the platform convention, so an app that
+  honours it needs no further wiring. `health-url` takes the same port through
+  the placeholder `${PORT}`, which the job replaces with it wherever it appears:
+  the default is `http://localhost:${PORT}/api/health`, and an app whose health
+  route is elsewhere writes `health-url: http://localhost:${PORT}/api/v1/health`
+  and names no port at all. Nothing else in the value is expanded — `$PORT`
+  stays five characters. **A `health-url` without the placeholder names a port
+  the allocation cannot reach, so the caller owes that port to its app as
+  well** — in `start-command`, e.g. `env PORT=8080 bun run start` — and two
+  overlapping runs of that caller collide on it. The boot gate refuses a
   `health-url` something already answers rather than grading whatever that is.
 - **The job takes its server container down when it ends**, on every run
   including the failed and the cancelled ones. A composite action has no `post:`
@@ -174,7 +178,13 @@ spells the same ten, and mean here what they mean there against another server:
 `db-gate-evidence` names the artifact it leaves behind, and the seven after them
 aim its boot, probe and ramp steps —
 [docs/gates/db-serving.md](docs/gates/db-serving.md) is what each one does. A
-consumer that moves between the two workflows writes one call either way.
+consumer that moves between the two workflows writes one call either way, with
+one exception: `health-url` here also takes the `${PORT}` placeholder, and
+dev-config's job does not replace it — there a URL carrying it is malformed,
+`curl` exits 3 on it, and the boot step polls it until its 60 s bound runs out.
+A call that writes the placeholder is a call to this workflow until dev-config
+adopts the same rule, which
+[dev-config#99](https://github.com/gokayo43/dev-config/issues/99) proposes.
 
 Two are names dev-config has no use for. `datetime-allowlist` is the type this
 family gets wrong where Postgres gets it right: their `timestamp-allowlist`
@@ -246,8 +256,8 @@ caller invisible: the one who passes the default itself.
 `docs/gates/db-serving.md` names that hole rather than implying it is closed.
 `start-command` and `health-url` are not in it: both default to empty and take
 their real default in the database job, which is also the only place
-`health-url`'s could live, since it names a port that job allocates while it
-runs.
+`health-url`'s could live, since its `${PORT}` is a port that job allocates while
+it runs.
 
 `db-gate-evidence` is asked the same question this workflow's own job can ask:
 passing it with `database: none` fails the run rather than being ignored, since

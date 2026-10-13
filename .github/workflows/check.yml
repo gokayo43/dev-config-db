@@ -105,10 +105,14 @@ on:
         default: ""
       health-url:
         description: >-
-          What that step polls until it answers 200. Empty takes
-          `http://localhost:${PORT}/api/health`, applied by the database job —
-          `PORT` is the port that job allocates for the app, which is a value no
-          input default could state. README's "Where it runs" is why it is
+          What that step polls until it answers 200. `${PORT}` in it is
+          replaced with the port the database job allocates for the app, so a
+          route other than the default's is written as
+          `http://localhost:${PORT}/api/v1/health` and the app still boots on a
+          port nothing else held when the job allocated it. Empty takes
+          `http://localhost:${PORT}/api/health`, applied by that job. A URL
+          without the placeholder is polled as written, and names a port the
+          caller then owes its app. README's "Where it runs" is why the port is
           allocated rather than fixed.
         type: string
         default: ""
@@ -387,7 +391,7 @@ jobs:
       # any one gate, and every step below connects to it. By full path and SHA
       # rather than `./` for the reason the steps below carry.
       - id: server
-        uses: gokayo43/dev-config-db/.github/actions/db-server@bcaf7b744afadf2980fc88588d52ae9375cb6e37
+        uses: gokayo43/dev-config-db/.github/actions/db-server@b3cd3990995d6e823cf733e92171d0f15128b7a6
         with:
           database-image: ${{ inputs['database-image'] }}
           # The account, the password and the database every gate in this job
@@ -458,7 +462,7 @@ jobs:
       # one value rather than two statements — the input — and
       # tests/wrapper-inputs.test.ts is what holds every step that takes an
       # image to it.
-      - uses: gokayo43/dev-config-db/.github/actions/db-replay@bcaf7b744afadf2980fc88588d52ae9375cb6e37
+      - uses: gokayo43/dev-config-db/.github/actions/db-replay@b3cd3990995d6e823cf733e92171d0f15128b7a6
         with:
           database-image: ${{ inputs['database-image'] }}
           database-url: ${{ steps.server.outputs['database-url'] }}
@@ -471,7 +475,7 @@ jobs:
       # upgrade reaches against the schema the replay just built. Its own
       # database, on the same server, dropped whichever way it goes.
       - if: inputs['upgrade-gate']
-        uses: gokayo43/dev-config-db/.github/actions/db-upgrade@bcaf7b744afadf2980fc88588d52ae9375cb6e37
+        uses: gokayo43/dev-config-db/.github/actions/db-upgrade@b3cd3990995d6e823cf733e92171d0f15128b7a6
         with:
           database-image: ${{ inputs['database-image'] }}
           database-url: ${{ steps.server.outputs['database-url'] }}
@@ -482,7 +486,7 @@ jobs:
       # migrations produced, so it needs the schema that step builds rather than
       # one written by hand. Its own pin, because an action and the workflow
       # pinning it are two commits — CLAUDE.md, "Releasing an action".
-      - uses: gokayo43/dev-config-db/.github/actions/db-datetime@bcaf7b744afadf2980fc88588d52ae9375cb6e37
+      - uses: gokayo43/dev-config-db/.github/actions/db-datetime@b3cd3990995d6e823cf733e92171d0f15128b7a6
         with:
           datetime-allowlist: ${{ inputs['datetime-allowlist'] }}
           database-url: ${{ steps.server.outputs['database-url'] }}
@@ -497,24 +501,39 @@ jobs:
       # 3000 is the framework default and therefore the one port something else
       # on such a box already holds, and it is also what two of these jobs would
       # collide on. PORT is the platform convention, so an app that honours it
-      # needs no further wiring; one that does not sets start-command and
-      # health-url, and then owes its own port.
+      # needs no further wiring; one that does not sets start-command and a
+      # health-url without the placeholder, and then owes its own port.
       #
       # Both a step output and a $GITHUB_ENV write, and the two are not the same
       # value's two spellings: the app reads the environment, while the gate's
-      # own health-url is built from the OUTPUT — which the graded repo's later
-      # steps cannot rewrite, as anything in $GITHUB_ENV can be. That is a
-      # deliberate delta from dev-config, whose job spells the same default
-      # `env.PORT`.
+      # own health-url is the OUTPUT — which the graded repo's later steps
+      # cannot rewrite, as anything in $GITHUB_ENV can be. That is a deliberate
+      # delta from dev-config, whose job spells the same default `env.PORT`.
+      #
+      # health-url's default lives here, in the job that reads it, and could
+      # live nowhere else: the port is not known until this step has run. It
+      # could not be the input's own default either — an input carrying one is
+      # non-empty for every caller, and the refusals job reads "the caller
+      # passed this" as "the value is non-empty". `||` is what an empty input
+      # means, which is what a caller who said nothing sends.
       - id: app
         name: Allocate a port for the app
+        env:
+          HEALTH_URL: ${{ inputs['health-url'] || 'http://localhost:${PORT}/api/health' }}
+          BUN: ${{ steps.pinned.outputs.bun }}
         run: |
           set -euo pipefail
-          # The ${} below is a JS template literal, not a shell expansion.
+          port=$("$BUN" -e 'const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+                            console.log(s.port); s.stop(true);')
+          # The substitution rule, and the only one: every literal `${PORT}` in
+          # the URL becomes the port allocated above, the port the app is handed
+          # as PORT. Nothing else in it is expanded — the value is the caller's
+          # text, and a URL without the placeholder is polled exactly as written,
+          # which is what a caller naming a fixed port has always had.
           # shellcheck disable=SC2016
-          port=$(bun -e 'const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
-                         console.log(s.port); s.stop(true);')
-          echo "port=$port" >> "$GITHUB_OUTPUT"
+          placeholder='${PORT}'
+          url=${HEALTH_URL//"$placeholder"/$port}
+          echo "health-url=$url" >> "$GITHUB_OUTPUT"
           echo "PORT=$port" >> "$GITHUB_ENV"
 
       # Migrations applying says nothing about whether an app can run against
@@ -523,20 +542,15 @@ jobs:
       # under load. A step of this job rather than a job of its own, for the
       # reason CONTEXT.md gives at "A database job". docs/gates/db-serving.md is
       # the page.
-      - uses: gokayo43/dev-config-db/.github/actions/db-serving@bcaf7b744afadf2980fc88588d52ae9375cb6e37
+      - uses: gokayo43/dev-config-db/.github/actions/db-serving@b3cd3990995d6e823cf733e92171d0f15128b7a6
         with:
-          # Both defaults live here, in the job that reads them, and health-url's
-          # could live nowhere else: the port is not known until the step above
-          # has run, so that default is a value only this job can build.
-          # start-command's could have been an input default and must not be —
-          # an input carrying one is non-empty for every caller, and the refusals
-          # job reads "the caller passed this" as "the value is non-empty", so
-          # these two would be the only inputs aimed at this job that it could
-          # not refuse when the job is off. `||` is what an empty input means,
-          # which is what a caller who said nothing sends. dev-config's database
-          # job carries the same pair for the same reasons.
+          # start-command's default lives here, beside health-url's in the step
+          # above, and for the reason that step gives: an input default is
+          # non-empty for every caller, so the refusals job could not refuse it
+          # when the job is off. dev-config's database job carries the same pair
+          # for the same reasons.
           start-command: ${{ inputs['start-command'] || 'bun run start' }}
-          health-url: ${{ inputs['health-url'] || format('http://localhost:{0}/api/health', steps.app.outputs.port) }}
+          health-url: ${{ steps.app.outputs['health-url'] }}
           probe-command: ${{ inputs['probe-command'] }}
           probe-timeout: ${{ inputs['probe-timeout'] }}
           capacity-script: ${{ inputs['capacity-script'] }}
