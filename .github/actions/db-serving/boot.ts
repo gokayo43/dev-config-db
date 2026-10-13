@@ -172,7 +172,7 @@ export async function bootGate({ root, command, url, log, seconds }: Boot): Prom
   if (await answers(url, ATTEMPT_MS)) {
     return {
       problems: [
-        `${url} already answers, and this step has started nothing yet — so something else on this machine is serving it, and a 200 from it would be this step reporting a boot that never happened. Leave health-url unset and the job allocates a port for the app, or name one nothing else on the runner holds.`,
+        `${url} already answers, and this step has started nothing yet — so something else on this machine is serving it, and a 200 from it would be this step reporting a boot that never happened. Write \${PORT} in health-url where the port goes, or leave it unset, and the job allocates a port for the app; otherwise name one nothing else on the runner holds.`,
       ],
     };
   }

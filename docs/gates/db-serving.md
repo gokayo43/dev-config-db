@@ -33,9 +33,13 @@ and reached the way the defaults assume, since everything else here is the same
 for every repo.
 
 Both default to empty in the call and take their real value in the database job:
-`bun run start`, and `http://localhost:${PORT}/api/health` on the port that job
-allocated for the app. `PORT` is the platform convention, so an app that honours
-it needs neither input; an app that ignores it writes both. The port is
+`bun run start`, and `http://localhost:${PORT}/api/health`. The job replaces every
+`${PORT}` in `health-url` with the port it allocated for the app, the default's
+and a caller's alike, and hands the app that port as `PORT`. `PORT` is the
+platform convention, so an app that honours it and answers at `/api/health`
+needs neither input; one that answers elsewhere writes only `health-url`, with
+the placeholder where the port goes; an app that ignores `PORT` writes both, and
+its `health-url` names the port its `start-command` gives it. The port is
 allocated rather than fixed because the runner is a shared, persistent machine —
 README's "Where it runs" is the argument, and it is also why neither default
 could be declared as the input's own.
@@ -63,8 +67,8 @@ The step polls a URL to decide whether the app came up, and a 200 off a port
 something else on the machine already holds says nothing about the app — it says
 the runner is shared. Left alone, that is not one wrong verdict: it is a green
 boot, a probe and twenty ramp VUs, all run against a stranger while the app
-under grade never ran. A consumer meets this only by naming a `health-url` of
-its own; the job allocates a port for the app otherwise.
+under grade never ran. A consumer meets this only by naming a port of its own
+in `health-url`; the job allocates one for the app otherwise.
 
 A `health-url` that is not an http(s) URL is refused by name rather than polled.
 `localhost:3000/health` parses as a URL — with `localhost:` read as its scheme —
@@ -306,7 +310,7 @@ A `workflow_call` input cannot be asked whether the caller passed it —
 spelled "the value is non-empty". That works for every input defaulting to `""`
 and cannot work for one carrying a value, which is why `start-command` and
 `health-url` carry none: their real defaults live in the job, where the port in
-`health-url`'s could live anyway.
+`health-url`'s is allocated anyway.
 
 Two inputs still carry a value, for reasons of their own — `database-image`, so
 that a consumer running the certified server writes nothing, and `upgrade-gate`,

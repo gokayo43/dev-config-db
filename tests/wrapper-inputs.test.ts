@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { isForeign, isList, mapAt, textAt } from "../.github/actions/_lib/foreign.ts";
+import { type Foreign, isForeign, isList, mapAt, textAt } from "../.github/actions/_lib/foreign.ts";
 
 import { root, serviceImages, SERVER_IMAGE, stringsIn, WRAPPER } from "./workflow.ts";
 
@@ -612,19 +612,44 @@ function gateStep(read: Read, action: string): Readonly<Record<string, string>> 
 /**
  * What a caller who wrote nothing gets, read off the `||` in the value a job
  * hands its gate.
- *
- * The port is allocated while the job runs, so the only thing the two workflows
- * can legitimately differ on is where that value is read from — dev-config's
- * job spells it `env.PORT` and this one spells it as the allocating step's
- * output, which the graded repo cannot rewrite. The placeholder is what makes
- * the rest of the sentence comparable.
  */
 function fallbackIn(value: string): string {
   const fallback = /\|\|\s*(.*?)\s*\}\}\s*$/su.exec(value)?.[1];
   if (fallback === undefined) {
     throw new Error(`${value} names no value for a caller who passed nothing`);
   }
-  return fallback.replace(/env\.PORT|steps\.[\w-]+\.outputs\.port/u, "<the allocated port>");
+  return fallback;
+}
+
+/**
+ * The default health URL with its port left as the placeholder, in either
+ * spelling the two jobs give it.
+ *
+ * The port is allocated while the job runs, so the only thing the two workflows
+ * can legitimately differ on is how that value reaches the URL — dev-config's
+ * job formats `env.PORT` into it, and this one writes the `${PORT}` its
+ * allocating step replaces, so that a caller's own URL can carry the port too.
+ * Rendering both to the placeholder is what makes the rest of the URL
+ * comparable.
+ */
+function defaultUrlIn(fallback: string): string {
+  const formatted = /^format\('([^']*)',\s*env\.PORT\)$/u.exec(fallback)?.[1];
+  if (formatted !== undefined) return formatted.replace("{0}", PLACEHOLDER);
+  const literal = /^'([^']*)'$/u.exec(fallback)?.[1];
+  if (literal !== undefined) return literal;
+  throw new Error(`${fallback} is not a default URL this suite knows how to read`);
+}
+
+/** What the allocating step replaces with the app's port. */
+const PLACEHOLDER = "${PORT}";
+
+/** The env of the step of this workflow's database job that allocates the app's port. */
+function allocationEnv(): Foreign {
+  const steps = mapAt(mapAt(wrapper.document, "jobs"), "database")["steps"];
+  return mapAt(
+    (isList(steps) ? steps : []).find((step) => textAt(step, "id") === "app"),
+    "env",
+  );
 }
 
 /**
@@ -635,20 +660,24 @@ function fallbackIn(value: string): string {
  * neither any more either, and applies both in its own database job. So the
  * oracle is that job: a consumer moving between the two workflows writes one
  * call either way, which is the same rule the input declarations above are held
- * to, asked of the place the values actually live now.
+ * to, asked of the place the values actually live now. health-url's is read off
+ * the step that allocates the port, which is where this workflow applies it.
  */
 test("the serving gate's two defaults are the ones dev-config's own job applies", () => {
   const ours = gateStep(wrapper, "actions/db-serving");
   const theirs = gateStep(upstream, "actions/db-gate");
 
-  for (const name of ["start-command", "health-url"] as const) {
-    const mine = ours[name];
-    const upstreams = theirs[name];
-    if (mine === undefined || upstreams === undefined) {
-      throw new Error(`${name} is not handed to the gate by both jobs`);
-    }
-    expect(`${name}: ${fallbackIn(mine)}`).toBe(`${name}: ${fallbackIn(upstreams)}`);
-  }
+  const applied = (value: string | undefined, where: string): string => {
+    if (value === undefined) throw new Error(`${where} applies no such default`);
+    return fallbackIn(value);
+  };
+
+  expect(`start-command: ${applied(ours["start-command"], "this job")}`).toBe(
+    `start-command: ${applied(theirs["start-command"], "dev-config's job")}`,
+  );
+  expect(
+    `health-url: ${defaultUrlIn(applied(textAt(allocationEnv(), "HEALTH_URL"), "this job"))}`,
+  ).toBe(`health-url: ${defaultUrlIn(applied(theirs["health-url"], "dev-config's job"))}`);
 });
 
 /**

@@ -157,10 +157,14 @@ test("the job hands the serving gate every input it declares, each under its own
     ["bun", "${{ steps.pinned.outputs.bun }}"],
     ["path", "${{ steps.pinned.outputs.path }}"],
   ]);
+  // health-url is the caller's, and still reaches the gate as one value: the
+  // step that allocates the app's port writes that port into it, so the gate
+  // takes that step's output — app-port.test.ts runs it.
+  const COMPOSED = new Map([["health-url", "${{ steps.app.outputs['health-url'] }}"]]);
   expect(Object.keys(passed)).not.toContain("database-url");
   const crossed = Object.entries(passed).filter(([name, value]) => {
-    const pinned = PINNED.get(name);
-    if (pinned !== undefined) return value !== pinned;
+    const fixed = PINNED.get(name) ?? COMPOSED.get(name);
+    if (fixed !== undefined) return value !== fixed;
     const reference = new RegExp(`inputs(?:\\.${name}(?![\\w-])|\\[(['"])${name}\\1\\])`, "u");
     return typeof value !== "string" || !reference.test(value);
   });
