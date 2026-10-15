@@ -160,7 +160,7 @@ permissions:
 
 jobs:
   static:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@97d521f411cb38877d9a58cae01cd1fa07b569b1 # v0.60.1
+    uses: gokayo43/dev-config/.github/workflows/check.yml@e32e8e861a0e2faf69540f6d9c22fd47d0467431 # v0.69.1
     with:
       build: ${{ inputs.build }}
       affected: ${{ inputs.affected }}
@@ -339,6 +339,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 30
+          --tmpfs /data:size=64m
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -438,7 +439,7 @@ jobs:
       # their host-key lookup is made with, the second is where GitHub publishes
       # those keys, and neither is a fact a consumer of this workflow has an
       # answer to.
-      - uses: gokayo43/dev-config/.github/actions/install@05488dabca760939e06e21ddaa99c661c4a45fad # v0.60.0
+      - uses: gokayo43/dev-config/.github/actions/install@83ed183cc948eb47050b4f235edd94a35d897603 # v0.69.0
         with:
           git-ssh-key: ${{ secrets['git-ssh-key'] }}
 

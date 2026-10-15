@@ -1,7 +1,7 @@
 # Install/refresh with: bun run prepare
 #
-# pre-commit stays fast and staged-only; the whole-project checks (typecheck,
-# knip, tests) live on pre-push so a green push is a green CI run.
+# pre-commit stays fast and staged-only. No hook runs on push: the chain, the
+# suite included, is CI's on the pull request (owner, 2026-10-15).
 
 pre-commit:
   parallel: true
@@ -18,16 +18,3 @@ pre-commit:
       # --staged scans the index, not the working tree: a key that reaches a
       # commit is already burned.
       run: gitleaks git --staged --redact --no-banner .
-
-pre-push:
-  parallel: true
-  commands:
-    typecheck:
-      run: bun run typecheck
-    test:
-      # git hands a hook run from a linked worktree GIT_DIR, and the suite's
-      # fixtures run git in directories of their own: inherited, every fixture
-      # commit lands on the branch being pushed. Unset here rather than in the
-      # suite, because Bun hands a child the environment it started with
-      # whatever `process.env` says since. git names the variables itself.
-      run: unset $(git rev-parse --local-env-vars) && bun test
