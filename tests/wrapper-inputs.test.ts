@@ -458,6 +458,27 @@ test("README.md's account of the input surface is dev-config's own", async () =>
   ).toEqual(Object.keys(declared(upstream, "inputs")).toSorted(alphabetically));
 });
 
+/**
+ * Every input the wrapper declares is aimed at one of two jobs, and has to
+ * reach the one it is aimed at: handed to dev-config's call, or guarded by the
+ * refusals job as one the database job here reads. `database` is both.
+ *
+ * "Read by something" above cannot tell the two apart for a pass-through the
+ * database job reads too, which `build` and `build-cache` are: dropped from the
+ * call, such an input still drives the build here while dev-config's static job
+ * runs on its own default — and refuses nothing it should, since its refusals
+ * read only what it is handed.
+ */
+test("every input the wrapper declares reaches dev-config's call or is guarded for the database job", () => {
+  const handed = new Set(forwarded(wrapper, "check.yml", "inputs").map(([key]) => key));
+  const refusals = mapAt(wrapper.document, "jobs")["refusals"];
+  const stranded = Object.keys(declared(wrapper, "inputs")).filter(
+    (name) => !handed.has(name) && !reads(refusals, "inputs", name),
+  );
+
+  expect(stranded).toEqual([]);
+});
+
 test("nothing in the call is this workflow answering for its consumer", () => {
   // A literal here would be this workflow deciding a value nothing in it
   // declares, and dev-config cannot tell that from the consumer's own answer.

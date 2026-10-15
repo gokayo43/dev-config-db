@@ -140,6 +140,7 @@ here**, where it runs against the server that consumer pinned.
 | Input                 | Type      |
 | --------------------- | --------- |
 | `build`               | `boolean` |
+| `build-cache`         | `string`  |
 | `affected`            | `boolean` |
 | `nightly`             | `boolean` |
 | `compose`             | `boolean` |
@@ -163,7 +164,7 @@ here**, where it runs against the server that consumer pinned.
 | `route-allowlist`     | `string`  |
 | `datetime-allowlist`  | `string`  |
 
-The first eleven are handed to dev-config's `check.yml` unchanged, so
+The first twelve are handed to dev-config's `check.yml` unchanged, so
 [its README](https://github.com/gokayo43/dev-config#ci) is the reference for
 what one does and for the conditions under which it refuses one. The inputs
 here carry no description of their own for that reason — a second copy of that
