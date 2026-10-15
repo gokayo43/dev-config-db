@@ -5,7 +5,7 @@
     "": {
       "name": "dev-config-db",
       "devDependencies": {
-        "@gokayo43/dev-config": "github:gokayo43/dev-config#83ed183cc948eb47050b4f235edd94a35d897603",
+        "@gokayo43/dev-config": "github:gokayo43/dev-config#e32e8e861a0e2faf69540f6d9c22fd47d0467431",
         "@types/bun": "1.4.2",
         "drizzle-orm": "0.45.2",
         "knip": "6.35.1",
@@ -25,7 +25,7 @@
 
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.2", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA=="],
 
-    "@gokayo43/dev-config": ["@gokayo43/dev-config@github:gokayo43/dev-config#83ed183", { "peerDependencies": { "@playwright/test": ">=1.62", "@shadcn/lint": ">=0.2", "effect": ">=3.22 <4", "eslint-import-resolver-typescript": ">=4", "eslint-plugin-boundaries": ">=7", "fast-check": ">=4", "knip": ">=6", "oxfmt": ">=0.63", "oxlint": ">=1.80", "oxlint-tsgolint": ">=7", "typescript": ">=7" }, "optionalPeers": ["@playwright/test", "@shadcn/lint", "effect", "eslint-import-resolver-typescript", "eslint-plugin-boundaries", "fast-check", "knip", "oxfmt", "oxlint", "oxlint-tsgolint", "typescript"], "bin": { "dev-server": "./dev-server.ts" } }, "gokayo43-dev-config-83ed183", "sha512-XnwBShZOAmmQXIjnzW7KYcHTJO99BwttHtPjM16Qd4BmBdRS4rRjVq3v1DTWW9RzRyQy3DxFdFS4CwJiQzVYvg=="],
+    "@gokayo43/dev-config": ["@gokayo43/dev-config@github:gokayo43/dev-config#e32e8e8", { "peerDependencies": { "@playwright/test": ">=1.62", "@shadcn/lint": ">=0.2", "effect": ">=3.22 <4", "eslint-import-resolver-typescript": ">=4", "eslint-plugin-boundaries": ">=7", "fast-check": ">=4", "knip": ">=6", "oxfmt": ">=0.63", "oxlint": ">=1.80", "oxlint-tsgolint": ">=7", "typescript": ">=7" }, "optionalPeers": ["@playwright/test", "@shadcn/lint", "effect", "eslint-import-resolver-typescript", "eslint-plugin-boundaries", "fast-check", "knip", "oxfmt", "oxlint", "oxlint-tsgolint", "typescript"], "bin": { "dev-server": "./dev-server.ts" } }, "gokayo43-dev-config-e32e8e8", "sha512-0y3SyM6mEz2ZBAgnC4DBRaMgpREWOunnA346mpWwPzXm678/i4dUZ0qhfq7zHnXBmveJsUH5UkVxMnUOSfswgw=="],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.3", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || ^2.0.0-alpha.4", "@emnapi/runtime": "^1.7.1 || ^2.0.0-alpha.4" } }, "sha512-UMduMbqO5s5zF2NkNacMT/yK5Y5QiKvWr2+50bzIIxFDwVJ2h49b+oyjaCGPhJxd2/gC2x39EHv/gHVuu36x2Q=="],
 

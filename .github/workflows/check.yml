@@ -439,7 +439,7 @@ jobs:
       # their host-key lookup is made with, the second is where GitHub publishes
       # those keys, and neither is a fact a consumer of this workflow has an
       # answer to.
-      - uses: gokayo43/dev-config/.github/actions/install@05488dabca760939e06e21ddaa99c661c4a45fad # v0.60.0
+      - uses: gokayo43/dev-config/.github/actions/install@83ed183cc948eb47050b4f235edd94a35d897603 # v0.69.0
         with:
           git-ssh-key: ${{ secrets['git-ssh-key'] }}
 
