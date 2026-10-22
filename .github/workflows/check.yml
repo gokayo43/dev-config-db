@@ -443,7 +443,7 @@ jobs:
       # their host-key lookup is made with, the second is where GitHub publishes
       # those keys, and neither is a fact a consumer of this workflow has an
       # answer to.
-      - uses: gokayo43/dev-config/.github/actions/install@ab9bfa8be7edabd6d08156e493a4ef4d3c4eeac9 # v0.70.0
+      - uses: gokayo43/dev-config/.github/actions/install@bf443953e3c8dcd80ed5f12872f942e1d6d3d046 # v0.70.1
         with:
           git-ssh-key: ${{ secrets['git-ssh-key'] }}
 
@@ -453,7 +453,7 @@ jobs:
       # build has run. Without it such a repo is refused for declaring no
       # migrations, which is a false answer to the question this gate asks.
       - if: inputs.build
-        uses: gokayo43/dev-config/.github/actions/build@ab9bfa8be7edabd6d08156e493a4ef4d3c4eeac9 # v0.70.0
+        uses: gokayo43/dev-config/.github/actions/build@bf443953e3c8dcd80ed5f12872f942e1d6d3d046 # v0.70.1
         with:
           cache: ${{ inputs['build-cache'] }}
 
@@ -594,7 +594,7 @@ jobs:
       # failed to start.
       - name: Publish what this job built, measured and read
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # The one place this name is defaulted, so that a caller passing an
           # empty string through is the same as a caller not asking for one.
