@@ -90,7 +90,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -101,6 +101,10 @@ jobs:
       database: external
       contract-exemptions: ci-call
 ```
+
+This repo has cut no release yet. Until it does, pin a commit on `main` and
+write `# main` as the comment; once releases exist, pin a release's commit and
+name its tag.
 
 `external` is dev-config's own value for this arrangement: their database job is
 Postgres, and it says a workflow wrapping theirs runs the database gates in that

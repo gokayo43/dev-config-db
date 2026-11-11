@@ -205,8 +205,8 @@ suite requires all four to name one commit: a repo gated by one dev-config,
 shipping another and grading its own wrapper against a third has no answer about
 any of them. The database job's `install` and `build` steps name a fifth
 commit: the one dev-config's own `check.yml` at that release pins its actions
-to, which the suite holds equal for `install`, so the static job and the
-database job run one install. Renovate raises the bump as a PR
+to, which the suite holds equal for both, so the static job and the database
+job run one install and one build. Renovate raises the bump as a PR
 (`renovate.json` extends dev-config's preset, which keeps that pin off
 automerge); the tag in the trailing comment moves with the SHA, and
 `bun install` is part of adopting it.
@@ -225,8 +225,8 @@ refused by dev-config's own contract.
 A commit cannot reference its own SHA, and inside a called workflow a relative
 `uses:` resolves against the **caller's** checkout — so the wrapper reaches this
 repo's actions by full path and SHA, and an action and the workflow pinning it
-are two commits. dev-config carries the same shape; `check.yml` there is v0.50.1
-pinning actions at v0.50.0.
+are two commits. dev-config carries the same shape: each of its releases is a
+pair, the second's `check.yml` pinning the first's actions.
 
 Two consequences, both live from the first action this repo shipped:
 
@@ -248,11 +248,10 @@ bun test
 
 ## Adoption
 
-`wmstcs` calls this workflow; `nfp-elysia` has no CI workflow at all yet and
-needs the fleet scaffold before the wrapper is worth pointing at. A consumer
-also needs a runner carrying `self-hosted` and `linux`: without one its jobs
-queue and are cancelled 24 hours later, which reads as a run that never started
-— `README.md`'s "Where it runs" is what such a runner has to provide. Two things in dev-config's repo contract
+`wmstcs` and `nfp-elysia` call this workflow. A consumer also needs a runner
+carrying `self-hosted` and `linux`: without one its jobs queue and are cancelled
+24 hours later, which reads as a run that never started — `README.md`'s "Where
+it runs" is what such a runner has to provide. Two things in dev-config's repo contract
 refuse a consumer of this workflow on facts that are about dev-config's own
 Postgres job rather than about the repo —
 [dev-config#65](https://github.com/gokayo43/dev-config/issues/65) carries both,
