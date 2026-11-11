@@ -40,6 +40,9 @@ on:
       mutation-floor:
         type: string
         default: ""
+      duplicate-code:
+        type: boolean
+        default: false
       contract-exemptions:
         description: >-
           A consumer of this workflow names `ci-call` among these: dev-config's
@@ -163,7 +166,7 @@ permissions:
 
 jobs:
   static:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@bf443953e3c8dcd80ed5f12872f942e1d6d3d046 # v0.70.1
+    uses: gokayo43/dev-config/.github/workflows/check.yml@5c95d7d005af11c48ad74e63188d29d36e2acd59 # v0.71.1
     with:
       build: ${{ inputs.build }}
       build-cache: ${{ inputs['build-cache'] }}
@@ -172,6 +175,7 @@ jobs:
       compose: ${{ inputs.compose }}
       mutation-lane: ${{ inputs['mutation-lane'] }}
       mutation-floor: ${{ inputs['mutation-floor'] }}
+      duplicate-code: ${{ inputs['duplicate-code'] }}
       contract-exemptions: ${{ inputs['contract-exemptions'] }}
       stack-allowlist: ${{ inputs['stack-allowlist'] }}
       data-jobs-external: ${{ inputs['data-jobs-external'] }}
@@ -443,7 +447,7 @@ jobs:
       # their host-key lookup is made with, the second is where GitHub publishes
       # those keys, and neither is a fact a consumer of this workflow has an
       # answer to.
-      - uses: gokayo43/dev-config/.github/actions/install@ab9bfa8be7edabd6d08156e493a4ef4d3c4eeac9 # v0.70.0
+      - uses: gokayo43/dev-config/.github/actions/install@4c398a3584b1508c26165c19cf453fc9e0e2b277 # v0.71.0
         with:
           git-ssh-key: ${{ secrets['git-ssh-key'] }}
 
@@ -453,7 +457,7 @@ jobs:
       # build has run. Without it such a repo is refused for declaring no
       # migrations, which is a false answer to the question this gate asks.
       - if: inputs.build
-        uses: gokayo43/dev-config/.github/actions/build@ab9bfa8be7edabd6d08156e493a4ef4d3c4eeac9 # v0.70.0
+        uses: gokayo43/dev-config/.github/actions/build@4c398a3584b1508c26165c19cf453fc9e0e2b277 # v0.71.0
         with:
           cache: ${{ inputs['build-cache'] }}
 

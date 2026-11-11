@@ -203,9 +203,13 @@ it tracks what `wmstcs` runs rather than what MySQL ships.
 Four files carry it — both workflows, `package.json` and `bun.lock` — and the
 suite requires all four to name one commit: a repo gated by one dev-config,
 shipping another and grading its own wrapper against a third has no answer about
-any of them. Renovate raises the bump as a PR (`renovate.json` extends
-dev-config's preset, which keeps that pin off automerge); the tag in the trailing
-comment moves with the SHA, and `bun install` is part of adopting it.
+any of them. The database job's `install` and `build` steps name a fifth
+commit: the one dev-config's own `check.yml` at that release pins its actions
+to, which the suite holds equal for `install`, so the static job and the
+database job run one install. Renovate raises the bump as a PR
+(`renovate.json` extends dev-config's preset, which keeps that pin off
+automerge); the tag in the trailing comment moves with the SHA, and
+`bun install` is part of adopting it.
 
 Renovate reaches the manifest through a different oracle than the workflows —
 digest against dev-config's default branch, tag for the two `uses:` — so a bump
