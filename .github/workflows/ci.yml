@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
   # is being reviewed. What the wrapper adds to that call — the pass-through — is
   # graded by tests/wrapper-inputs.test.ts, which the suite lane below runs.
   check:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@bf443953e3c8dcd80ed5f12872f942e1d6d3d046 # v0.70.1
+    uses: gokayo43/dev-config/.github/workflows/check.yml@5c95d7d005af11c48ad74e63188d29d36e2acd59 # v0.71.1
     with:
       # The contract wants the .env.example/.gitignore shape of a repo that has
       # an environment to document. This one has none to document: what it ships

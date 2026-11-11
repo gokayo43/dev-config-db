@@ -9,8 +9,16 @@ const CHECK_CALL = /^gokayo43\/dev-config\/\.github\/workflows\/check\.yml@([0-9
 /** This repo's own action, which the wrapper reaches the only way a called workflow can. */
 const OWN_ACTION = /^gokayo43\/dev-config-db\/\.github\/actions\/[\w-]+@([0-9a-f]{40})$/;
 
-/** The one action of dev-config's this wrapper runs itself: the install that takes the consumer's key. */
-const INSTALL = /^gokayo43\/dev-config\/\.github\/actions\/install@([0-9a-f]{40})$/;
+/**
+ * The actions of dev-config's this wrapper runs itself, in its database job: the
+ * install that takes the consumer's key, and the build that runs before the
+ * migrator where the consumer asks for one.
+ */
+const UPSTREAM_ACTIONS = ["install", "build"];
+
+function upstreamAction(name: string): RegExp {
+  return new RegExp(`^gokayo43/dev-config/\\.github/actions/${name}@([0-9a-f]{40})$`, "u");
+}
 
 /**
  * The two contexts a caller's value reaches a called workflow through, which
@@ -521,33 +529,36 @@ function pinsOf(read: Read, action: RegExp): string[] {
 }
 
 /**
- * The database job's install is dev-config's own action, and this is what makes
- * that a fact rather than a claim three pages repeat.
+ * The database job's install and build are dev-config's own actions, and this
+ * is what makes that a fact rather than a claim three pages repeat.
  *
  * Every other pin in this file is either one of this repo's own commits, which
  * the two checks below grade, or a third party's, which Renovate moves and a
- * reviewer reads. This one is neither: it is dev-config's, and the whole reason
- * it is here is that the static job installs through the same action at the
- * same commit — one key, one install, both jobs. Nothing but the shape of a SHA
- * held it before, and a pin that drifts off theirs is two installs again, with
- * the difference invisible until a consumer's key works in one job and not the
- * other.
+ * reviewer reads. These two are neither: they are dev-config's, and the whole
+ * reason they are here is that the static job runs the same actions at the same
+ * commit — one key, one install, one build, both jobs. A pin that drifts off
+ * theirs is two installs again, with the difference invisible until a
+ * consumer's key works in one job and not the other, or a build that passes one
+ * job fails the other.
  *
  * The oracle is the dev-config this repo installs, which is the commit both
- * workflows call: their own `check.yml` pins the action their jobs use, so the
+ * workflows call: their own `check.yml` pins the actions their jobs use, so the
  * question is simply whether this file names what that file names.
  */
-test("the install this wrapper runs is the one dev-config's own check.yml pins", () => {
-  const ours = pinsOf(wrapper, INSTALL);
-  const theirs = pinsOf(upstream, INSTALL);
+test.each(UPSTREAM_ACTIONS)(
+  "the %s this wrapper runs is the one dev-config's own check.yml pins",
+  (name) => {
+    const action = upstreamAction(name);
+    const ours = pinsOf(wrapper, action);
+    const theirs = pinsOf(upstream, action);
 
-  // Neither side vacuous: a wrapper that stopped installing through their
-  // action, and an upstream whose job stopped using it, are both a rule with
-  // nothing under it.
-  expect(ours).toHaveLength(1);
-  expect(theirs).toHaveLength(1);
-  expect(ours).toEqual(theirs);
-});
+    // Neither side vacuous: a wrapper that stopped running their action, and an
+    // upstream whose jobs stopped using it, are both a rule with nothing under it.
+    expect(ours).toHaveLength(1);
+    expect(theirs).toHaveLength(1);
+    expect(ours).toEqual(theirs);
+  },
+);
 
 /**
  * The actions this repo ships, each reached by full path and SHA because a
