@@ -166,7 +166,7 @@ permissions:
 
 jobs:
   static:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@5c95d7d005af11c48ad74e63188d29d36e2acd59 # v0.71.1
+    uses: gokayo43/dev-config/.github/workflows/check.yml@d93cc1e5cac170a136924ee6db982bd906557e05 # v0.72.1
     with:
       build: ${{ inputs.build }}
       build-cache: ${{ inputs['build-cache'] }}
@@ -400,7 +400,7 @@ jobs:
       # any one gate, and every step below connects to it. By full path and SHA
       # rather than `./` for the reason the steps below carry.
       - id: server
-        uses: gokayo43/dev-config-db/.github/actions/db-server@b3cd3990995d6e823cf733e92171d0f15128b7a6
+        uses: gokayo43/dev-config-db/.github/actions/db-server@af0ffca34d904e3ee60763f1023fe5f0a3b43bae
         with:
           database-image: ${{ inputs['database-image'] }}
           # The account, the password and the database every gate in this job
@@ -447,7 +447,7 @@ jobs:
       # their host-key lookup is made with, the second is where GitHub publishes
       # those keys, and neither is a fact a consumer of this workflow has an
       # answer to.
-      - uses: gokayo43/dev-config/.github/actions/install@4c398a3584b1508c26165c19cf453fc9e0e2b277 # v0.71.0
+      - uses: gokayo43/dev-config/.github/actions/install@0eac703548f4418d726599227ab00b253e6627db # v0.72.0
         with:
           git-ssh-key: ${{ secrets['git-ssh-key'] }}
 
@@ -457,7 +457,7 @@ jobs:
       # build has run. Without it such a repo is refused for declaring no
       # migrations, which is a false answer to the question this gate asks.
       - if: inputs.build
-        uses: gokayo43/dev-config/.github/actions/build@4c398a3584b1508c26165c19cf453fc9e0e2b277 # v0.71.0
+        uses: gokayo43/dev-config/.github/actions/build@0eac703548f4418d726599227ab00b253e6627db # v0.72.0
         with:
           cache: ${{ inputs['build-cache'] }}
 
@@ -473,7 +473,7 @@ jobs:
       # one value rather than two statements — the input — and
       # tests/wrapper-inputs.test.ts is what holds every step that takes an
       # image to it.
-      - uses: gokayo43/dev-config-db/.github/actions/db-replay@b3cd3990995d6e823cf733e92171d0f15128b7a6
+      - uses: gokayo43/dev-config-db/.github/actions/db-replay@af0ffca34d904e3ee60763f1023fe5f0a3b43bae
         with:
           database-image: ${{ inputs['database-image'] }}
           database-url: ${{ steps.server.outputs['database-url'] }}
@@ -486,7 +486,7 @@ jobs:
       # upgrade reaches against the schema the replay just built. Its own
       # database, on the same server, dropped whichever way it goes.
       - if: inputs['upgrade-gate']
-        uses: gokayo43/dev-config-db/.github/actions/db-upgrade@b3cd3990995d6e823cf733e92171d0f15128b7a6
+        uses: gokayo43/dev-config-db/.github/actions/db-upgrade@af0ffca34d904e3ee60763f1023fe5f0a3b43bae
         with:
           database-image: ${{ inputs['database-image'] }}
           database-url: ${{ steps.server.outputs['database-url'] }}
@@ -497,7 +497,7 @@ jobs:
       # migrations produced, so it needs the schema that step builds rather than
       # one written by hand. Its own pin, because an action and the workflow
       # pinning it are two commits — CLAUDE.md, "Releasing an action".
-      - uses: gokayo43/dev-config-db/.github/actions/db-datetime@b3cd3990995d6e823cf733e92171d0f15128b7a6
+      - uses: gokayo43/dev-config-db/.github/actions/db-datetime@af0ffca34d904e3ee60763f1023fe5f0a3b43bae
         with:
           datetime-allowlist: ${{ inputs['datetime-allowlist'] }}
           database-url: ${{ steps.server.outputs['database-url'] }}
@@ -553,7 +553,7 @@ jobs:
       # under load. A step of this job rather than a job of its own, for the
       # reason CONTEXT.md gives at "A database job". docs/gates/db-serving.md is
       # the page.
-      - uses: gokayo43/dev-config-db/.github/actions/db-serving@b3cd3990995d6e823cf733e92171d0f15128b7a6
+      - uses: gokayo43/dev-config-db/.github/actions/db-serving@af0ffca34d904e3ee60763f1023fe5f0a3b43bae
         with:
           # start-command's default lives here, beside health-url's in the step
           # above, and for the reason that step gives: an input default is

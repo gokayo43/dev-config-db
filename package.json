@@ -20,10 +20,10 @@
     "prepare": "lefthook install || true"
   },
   "devDependencies": {
-    "@gokayo43/dev-config": "github:gokayo43/dev-config#5c95d7d005af11c48ad74e63188d29d36e2acd59",
+    "@gokayo43/dev-config": "github:gokayo43/dev-config#d93cc1e5cac170a136924ee6db982bd906557e05",
     "@types/bun": "1.4.2",
     "drizzle-orm": "0.45.2",
-    "knip": "6.35.1",
+    "knip": "6.38.0",
     "lefthook": "2.1.12",
     "mysql2": "3.24.4",
     "oxfmt": "0.67.0",
