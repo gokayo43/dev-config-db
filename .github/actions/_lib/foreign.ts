@@ -31,7 +31,7 @@
  *   * `isList` is theirs verbatim, docblock included.
  */
 
-// oxlint-disable-next-line typescript/no-restricted-types, anti-slop/no-unsafe-dictionary-type -- the boundary this module exists to be: a mapping whose keys are another author's, read through the functions below and never indexed raw
+// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- the boundary this module exists to be: a mapping whose keys are another author's, read through the functions below and never indexed raw
 export type Foreign = Record<string, unknown>;
 
 /**
