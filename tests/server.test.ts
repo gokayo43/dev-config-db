@@ -1,9 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
-import { startServer } from "../.github/actions/db-server/server.ts";
+import { mapAt } from "../.github/actions/_lib/foreign.ts";
+import { DATA_DIRECTORY_BYTES, startServer, WITHIN } from "../.github/actions/db-server/server.ts";
 
-import { DEFAULT, PRODUCTS, emptyDatabase, noteOf, query, server } from "./servers.ts";
-import { serviceImages } from "./workflow.ts";
+import {
+  DEFAULT,
+  PRODUCTS,
+  containerFor,
+  emptyDatabase,
+  noteOf,
+  query,
+  server,
+} from "./servers.ts";
+import { serviceImages, wrapperDocument } from "./workflow.ts";
 
 /**
  * The step that stands where a service container used to, and the reason it has
@@ -40,8 +49,29 @@ function named(what: string): string {
 
 /** Whatever this case started, gone — asserted nowhere, because a leaked container is not this file's verdict. */
 async function removed(name: string): Promise<void> {
-  const proc = Bun.spawn(["docker", "rm", "--force", name], { stdout: "ignore", stderr: "ignore" });
+  const proc = Bun.spawn(["docker", "rm", "--force", "--volumes", name], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
   await proc.exited;
+}
+
+/** What docker answers to one command, and whether it answered at all. */
+async function docker(...args: string[]): Promise<{ status: number; stdout: string }> {
+  const proc = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "ignore" });
+  const [stdout, status] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+  return { status, stdout: stdout.trim() };
+}
+
+/** The names of the docker volumes mounted into a container. */
+async function volumesOf(name: string): Promise<string[]> {
+  const { stdout } = await docker(
+    "inspect",
+    "--format",
+    '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}',
+    name,
+  );
+  return stdout.split(" ").filter((each) => each !== "");
 }
 
 for (const product of PRODUCTS) {
@@ -70,6 +100,26 @@ for (const product of PRODUCTS) {
       // declaration it was handed would carry no port at all.
       expect(port).not.toBe("");
       expect(note).toContain(`came up on port ${port}`);
+    }, 180_000);
+
+    /**
+     * The kernel's own view from inside the container, never the option string
+     * the step passed. Kills a tmpfs at a path this image does not keep its data
+     * in, a tmpfs with no size (half the host's memory), and a step that leaves
+     * the image's declared volume beside the tmpfs.
+     */
+    test("the data directory is a capped tmpfs, and the container has no docker volume", async () => {
+      await server(product);
+      const as = containerFor(product);
+      const mounts = await docker("exec", as, "cat", "/proc/mounts");
+      const data = mounts.stdout
+        .split("\n")
+        .map((line) => line.split(" "))
+        .find(([, mountPoint]) => mountPoint === "/var/lib/mysql");
+
+      expect(data?.[2]).toBe("tmpfs");
+      expect((data?.[3] ?? "").split(",")).toContain(`size=${DATA_DIRECTORY_BYTES / 1024}k`);
+      expect((await docker("inspect", "--format", "{{json .Mounts}}", as)).stdout).toBe("[]");
     }, 180_000);
 
     test("a database made on it is the database the gates then read", async () => {
@@ -155,11 +205,20 @@ test("a container left behind by a previous run is reclaimed rather than collide
     // report docker's own "name is already in use" — a fault of this repo's,
     // reported to a consumer as if their call were wrong.
     await startServer({ image: NOT_A_SERVER, url, as, within: BRIEF });
+    // The image declares a volume outside /var/lib/mysql, so the first
+    // container has one, and the reclaim has to take it with the container.
+    const left = await volumesOf(as);
     const again = await startServer({ image: NOT_A_SERVER, url, as, within: BRIEF });
 
     expect(again.problems).toHaveLength(1);
     expect(again.problems[0]).toContain("never answered a query");
     expect(again.problems[0]).not.toContain("already in use");
+    expect(left).not.toEqual([]);
+    for (const volume of left) {
+      expect(`${volume}: ${(await docker("volume", "inspect", volume)).status}`).toBe(
+        `${volume}: 1`,
+      );
+    }
   } finally {
     await removed(as);
   }
@@ -256,4 +315,17 @@ test("a URL naming an account the image never creates is refused", async () => {
 
   expect(verdict.problems).toHaveLength(1);
   expect(verdict.problems[0]).toContain("initialises the server's root account");
+});
+
+/**
+ * The step's bound has to end before the job's: a server that never answers is
+ * reported by this step with its own output, where the job's timeout would
+ * cancel the step and say nothing about the server.
+ */
+test("the step's bound is below the database job's timeout", async () => {
+  const job = mapAt(mapAt(await wrapperDocument(), "jobs"), "database");
+  const minutes = job["timeout-minutes"];
+
+  expect(typeof minutes).toBe("number");
+  expect(WITHIN).toBeLessThan(Number(minutes) * 60_000);
 });

@@ -106,7 +106,7 @@ function beside(url: string, database: string): string {
  * The worktree is what distinguishes it, so two checkouts under review at once
  * — and any neighbour's containers on the same daemon — are never each other's.
  */
-function containerFor({ name }: Product): string {
+export function containerFor({ name }: Product): string {
   const here = new Bun.CryptoHasher("sha256").update(root).digest("hex").slice(0, 16);
   return `dev-config-db-suite-${here}-${name.toLowerCase()}`;
 }
@@ -179,7 +179,7 @@ export async function stop(): Promise<void> {
   for (const name of asked) {
     const product = PRODUCTS.find((each) => each.name === name);
     if (product === undefined) continue;
-    const proc = Bun.spawn(["docker", "rm", "--force", containerFor(product)], {
+    const proc = Bun.spawn(["docker", "rm", "--force", "--volumes", containerFor(product)], {
       stdout: "ignore",
       stderr: "ignore",
     });

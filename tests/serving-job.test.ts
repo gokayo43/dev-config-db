@@ -45,7 +45,7 @@ function stepsOf(document: Foreign): Foreign[] {
  * would go quiet the first time a step wrote one into its own `run:` — which is
  * exactly the claim CLAUDE.md makes for this test.
  */
-function runnerFiles(document: Foreign): string[] {
+function runnerFiles(document: Foreign | readonly Foreign[]): string[] {
   return [
     ...new Set(
       stringsIn(document).flatMap((value) =>
@@ -85,12 +85,20 @@ test("every file the gates leave in the runner is in the artifact the job upload
   const upload = stepUsing("actions/upload-artifact");
   const path = textAt(mapAt(upload, "with"), "path") ?? "";
 
-  const written = [...runnerFiles(serving), ...runnerFiles(replay), ...runnerFiles(upgrade)];
+  // The job's own steps write files too, and the upload's `path` is left out
+  // because it names every file it carries and would grade itself.
+  const job = jobSteps().filter((step) => step !== upload);
+  const written = [
+    ...runnerFiles(serving),
+    ...runnerFiles(replay),
+    ...runnerFiles(upgrade),
+    ...runnerFiles(job),
+  ];
   // The two schemas the replay compared, the schema the upgrade path reached,
-  // the app's own output, the k6 summary and both route-log snapshots: seven
-  // files, and the whole reason the upload belongs to the job rather than to any
-  // one action.
-  expect(written).toHaveLength(7);
+  // the app's own output, the k6 summary, both route-log snapshots and the
+  // database server's own output: eight files, and the whole reason the upload
+  // belongs to the job rather than to any one action.
+  expect(written).toHaveLength(8);
   expect(written.filter((file) => !path.includes(file))).toEqual([]);
 
   // The run that failed on the way to a number is exactly the run whose partial
@@ -323,10 +331,32 @@ test("the job takes its server down, whatever happened to the run", () => {
   const last = steps.at(-1);
 
   expect(textAt(last, "if")).toBe("${{ always() }}");
-  expect(textAt(last, "run")).toContain("docker rm --force");
+  // `--volumes`, or an image that keeps its data outside the in-memory data
+  // directory leaves an anonymous volume on the runner's disk every run.
+  expect(textAt(last, "run")).toContain("docker rm --force --volumes");
   // The container it removes is the one the server step named, rather than a
   // name this file derives a second time.
   expect(textAt(mapAt(last, "env"), "CONTAINER")).toBe("${{ steps.server.outputs.container }}");
+});
+
+/**
+ * The removal takes the server's output with it, so the output is read before
+ * the removal and on every run: the failed and the timed-out runs are the ones
+ * whose server output says why.
+ */
+test("the server's own output is kept before the upload, whatever happened to the run", () => {
+  const steps = jobSteps();
+  const keep = steps.findIndex((step) => (textAt(step, "run") ?? "").includes("docker logs"));
+  const upload = steps.findIndex((step) =>
+    (textAt(step, "uses") ?? "").includes("upload-artifact"),
+  );
+
+  expect(keep).toBeGreaterThan(-1);
+  expect(keep).toBeLessThan(upload);
+  expect(textAt(steps[keep], "if")).toBe("${{ always() }}");
+  expect(textAt(mapAt(steps[keep], "env"), "CONTAINER")).toBe(
+    "${{ steps.server.outputs.container }}",
+  );
 });
 
 test("every step that uses the database comes after the step that starts it", () => {

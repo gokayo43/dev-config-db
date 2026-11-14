@@ -41,10 +41,10 @@ What that costs, stated plainly: the runner health-checks a service container
 and refuses to start the job's steps until it passes, and it starts one in
 parallel with the job's checkout. A step does neither. So this step polls the
 server itself and blocks until it answers — the same wait, spent in series
-rather than in parallel. Measured from `docker run` to the first query answered,
-image already local: 10s on the MariaDB pin, 25s on the MySQL 8 one, plus
-whatever the image pull costs a cold runner. The step's own bound is two
-minutes.
+rather than in parallel. Measured on 2026-11-14 from `docker run` to the first
+query answered, image already local, on an idle 16-core host: 2.6-3.6 s on the
+MariaDB pin and 5.6 s on the MySQL 8 one, plus whatever the image pull costs a
+cold runner. The step's own bound is five minutes (below).
 
 What it buys back is that the wait is this repo's code rather than a health
 command in YAML: it is graded by `tests/server.test.ts` against both products,
@@ -57,8 +57,53 @@ runner that is thrown away made that invisible; a persistent one turns it into a
 database server per consumer workspace, resident between runs with the last
 run's replayed schemas in it, on a published loopback port. The removal runs
 under `always()`, because the runs whose server is most worth removing are the
-ones that failed or hit the job's own timeout. The reclaim at the top of this
-step stays: it is what a run that was killed outright leaves behind.
+ones that failed or hit the job's own timeout. The removal and the reclaim at
+the top of this step both pass `--volumes`, so whatever volume an image creates
+goes with its container. The reclaim stays: it is what a run that was killed
+outright leaves behind, and until the next run in that workspace reclaims it,
+or the host removes it, that container holds memory rather than disk.
+
+**The server's own output is in the evidence artifact**, as
+`database-server.log`. The step before the upload reads it with `docker logs`
+on every run, the failed and the timed-out ones included, because the removal
+takes it with the container. It holds no password: both images print only that
+they set one.
+
+## Where its data lives
+
+In memory. The step mounts a tmpfs of 2 GB over `/var/lib/mysql`, the data
+directory both certified images keep and declare as a volume, so docker creates
+no volume for it and the data ends with the container. Both pins measured the
+same way as above, two runs each:
+
+| Pin          | Data directory on a docker volume | In memory    |
+| ------------ | --------------------------------- | ------------ |
+| MariaDB 11.4 | 8.8 s, 9.6 s                      | 3.6 s, 2.6 s |
+| MySQL 8.0.46 | 24.6 s, 24.6 s                    | 5.6 s, 5.6 s |
+
+On disk the boot spent most of its time waiting on writes, not on CPU: the
+MySQL boot used 4.1 s of CPU on the volume and 3.0 s in memory. A fresh data
+directory holds 162 MB on MariaDB and 201 MB on MySQL, and the most this
+repo's own suite grew either to was 202 MB.
+
+**What it costs a runner** is memory for each database job running at once:
+about 200 MB fresh, and at most the 2 GB cap. The cap is what keeps a runaway
+run from filling the runner's memory, since an unsized tmpfs may take half of
+it. 2 GB is ten times a fresh data directory; nothing has yet measured one at
+the end of a consumer's whole database job, and a consumer's first run on this
+is what will. A data directory that fills is the
+server's own failure: it refuses the write or stops, the gate that meets it goes
+red, and the server's output in the evidence artifact (above) says why.
+
+## The bound
+
+Five minutes, and the database job's `timeout-minutes` stays above it, which
+`tests/server.test.ts` holds. In memory the boot is mostly CPU, and a job on a
+shared runner can get a small fraction of one core: under `--cpus 0.05` the
+in-memory boot took 60 s on the MariaDB pin and 90 s on the MySQL 8 one. A
+bound below the job's means a server that never
+answers is reported by this step, with its output, before the job's timeout
+cancels everything.
 
 ## What it does
 
@@ -70,11 +115,12 @@ rm --force`: on a self-hosted runner two jobs share one docker daemon, and
    agent runs one job at a time and each has its own `_work` root, so the
    workspace separates concurrent jobs while staying the same across re-runs.
 2. Starts the image with `--publish 127.0.0.1::3306` — loopback, and a host port
-   the docker daemon assigns — then reads that assignment back out of
-   `docker port`. The root password and the database name come out of
-   `database-url`, through `MYSQL_ROOT_PASSWORD` and `MYSQL_DATABASE`: the two
-   names **both** images read, since the MariaDB image keeps them for
-   compatibility and no MySQL image has ever had the `MARIADB_` spellings.
+   the docker daemon assigns — and a capped tmpfs over `/var/lib/mysql`, then
+   reads the port assignment back out of `docker port`. The root password and
+   the database name come out of `database-url`, through `MYSQL_ROOT_PASSWORD`
+   and `MYSQL_DATABASE`: the two names **both** images read, since the MariaDB
+   image keeps them for compatibility and no MySQL image has ever had the
+   `MARIADB_` spellings.
 3. Polls until a query answers, reports the server's own `version()` and the
    port it came up on in the note it leaves behind, and answers with that URL as
    its `database-url` output — which is what every later step of the job
@@ -127,7 +173,7 @@ database this step started.
   under it. This is the failure a service container could not have: the runner
   would have refused to start the job. Reported as what it is rather than as a
   timeout, because the reason is in the image's first lines.
-- **A server that never answers within the bound** — two minutes — with its
+- **A server that never answers within the bound** — five minutes — with its
   output relayed the same way.
 
 ## What a consumer on MySQL 8 has to know about clients
@@ -168,5 +214,10 @@ either half.
   image's defaults, and a schema that applies here can fail on a server
   configured differently.
 - **A server that answers and then dies.** The check is at the start; a gate
-  that later meets a dead server reports a refused connection, and the evidence
-  artifact is where the run's own output is.
+  that later meets a dead server reports a refused connection, and
+  `database-server.log` in the evidence artifact is where the server says why. A
+  data directory that filled its 2 GB is one such death, or a write the server
+  refused.
+- **An image that keeps its data somewhere other than `/var/lib/mysql`.** It
+  starts as before, with its data on a docker volume on the runner's disk and
+  the unused tmpfs beside it. The removal takes that volume with the container.

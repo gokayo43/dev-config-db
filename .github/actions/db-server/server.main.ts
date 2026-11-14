@@ -1,5 +1,5 @@
 import { entry, inputs, mask, publish, required, stepOutput } from "../_lib/annotations.ts";
-import { startServer } from "./server.ts";
+import { startServer, WITHIN } from "./server.ts";
 
 /**
  * One server per job, and the name says which job by deriving from the
@@ -22,17 +22,6 @@ import { startServer } from "./server.ts";
 function containerFor(workspace: string): string {
   return `db-gate-server-${new Bun.CryptoHasher("sha256").update(workspace).digest("hex").slice(0, 16)}`;
 }
-
-/**
- * How long the server has to come up, and it is a bound rather than a guess.
- * Measured on the pins this repo certifies, image already local: 10s for
- * MariaDB 11.4 and 25s for MySQL 8.0 from `docker run` to the first query
- * answered. A runner pays an image pull on top of that, and the job that calls
- * this allows itself fifteen minutes for everything after it — so two minutes
- * is room for a cold pull and a slow box without being a bound that lets a
- * wedged server eat the job.
- */
-const WITHIN = 120_000;
 
 await entry(async () => {
   const read = inputs("database-image", "workspace");
