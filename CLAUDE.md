@@ -119,18 +119,23 @@ that has been improved says so at the line that improved it.
   `path`, and `tests/serving-job.test.ts` fails when one does not.
 - `tests/` — what CI cannot see from outside. `wrapper-inputs.test.ts` grades
   the wrapper and the README against the dev-config in `node_modules`, which is
-  the commit the workflows call: every input the wrapper hands on reaches the
-  call under its own name, every input it declares is read by something and is
-  declared with dev-config's own type and default, nothing is forwarded that
-  dev-config does not declare, what it forwards is exactly what dev-config's
-  static job acts on, the call carries no literal at all — every value
-  in it is a consumer's input handed on — only one job calls that workflow at
-  all, what the README
-  tables and what it says is refused cover dev-config's input surface exactly,
-  the four carriers of the dev-config pin agree, every action pin names a commit
-  this repo carries AND one whose `.github/actions` is the tree here now, every
-  step taking a server image is handed the caller's one input, and no service
-  image is an expression — which is the rule that decided the server is a step.
+  the commit the workflows call. It holds that:
+  - every input and secret the call hands on reaches it under its own name and
+    is one dev-config declares;
+  - the inputs it hands on are exactly those dev-config's static job acts on;
+  - the call carries no literal: every value in it is a consumer's input;
+  - only one job calls dev-config's workflow;
+  - every input and secret the wrapper declares is read by something, and is
+    declared as dev-config declares it;
+  - README's table and its refused list cover dev-config's input surface
+    exactly;
+  - the four carriers of the dev-config pin agree;
+  - every action pin names a commit this repo carries, and one whose
+    `.github/actions` is the tree here now;
+  - every step taking a server image is handed the caller's one input;
+  - no service image is an expression, which is the rule that decided the
+    server is a step.
+
   `refusals.test.ts` runs the wrapper's own `run:` block — extracted from the
   shipped YAML rather than transcribed, with the environment derived from its
   own `env:` block — over the whole truth table of the rule this workflow adds.

@@ -176,16 +176,17 @@ here**, where it runs against the server that consumer pinned.
 | `route-allowlist`     | `string`  |
 | `datetime-allowlist`  | `string`  |
 
-The first fourteen are handed to dev-config's `check.yml` unchanged, so
+Every input above `database` is handed to dev-config's `check.yml` unchanged, so
 [its README](https://github.com/gokayo43/dev-config#ci) is the reference for
 what one does and for the conditions under which it refuses one. The inputs
 here carry no description of their own for that reason — a second copy of that
 prose is a copy that drifts — and the one exception says what dev-config
 cannot: that a consumer of this workflow owes `ci-call`.
 
-The other twelve drive this workflow's own job and reach dev-config's
-`check.yml` under no name at all — `database` is the exception among them, since
-it decides a job here AND is handed on. Ten are spelled the way dev-config
+`database` and every input below it drive this workflow's own job and reach
+dev-config's `check.yml` under no name at all — `database` is the exception
+among them, since it decides a job here AND is handed on. Ten are spelled the
+way dev-config
 spells the same ten, and mean here what they mean there against another server:
 `database` adds the database job below, `upgrade-gate` adds its upgrade step,
 `db-gate-evidence` names the artifact it leaves behind, and the seven after them
