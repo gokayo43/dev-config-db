@@ -260,23 +260,29 @@ function reads(document: unknown, kind: Kind, name: string): boolean {
   return stringsIn(document).some((text) => reference.test(text));
 }
 
-/** Every job whose work is this repo's own, which is every job that is not the call into dev-config. */
-function ownJobs({ document }: Read): unknown[] {
-  return Object.values(mapAt(document, "jobs")).filter((job) => {
+/** The name of every job whose work is this repo's own, which is every job that is not the call into dev-config. */
+function ownJobs({ document }: Read): string[] {
+  return Object.entries(mapAt(document, "jobs")).flatMap(([name, job]) => {
     const uses = textAt(job, "uses");
-    return uses === undefined || !CHECK_CALL.test(uses);
+    return uses === undefined || !CHECK_CALL.test(uses) ? [name] : [];
   });
+}
+
+/** The steps of one job of a workflow. */
+function stepsOf(document: unknown, job: string): readonly unknown[] {
+  const steps = mapAt(mapAt(document, "jobs"), job)["steps"];
+  if (!isList(steps)) throw new Error(`the workflow has no ${job} job with steps`);
+  return steps;
 }
 
 /** Every value the wrapper's own jobs write beside `key` in a step's `with:`. */
 function jobStepsWith(key: string): string[] {
-  return ownJobs(wrapper).flatMap((job) => {
-    const steps = isForeign(job) ? job["steps"] : undefined;
-    return (isList(steps) ? steps : []).flatMap((step) => {
+  return ownJobs(wrapper).flatMap((job) =>
+    stepsOf(wrapper.document, job).flatMap((step) => {
       const given = textAt(mapAt(step, "with"), key);
       return given === undefined ? [] : [given];
-    });
-  });
+    }),
+  );
 }
 
 const alphabetically = (a: string, b: string): number => a.localeCompare(b);
@@ -335,9 +341,10 @@ for (const { kind, one } of KINDS) {
    */
   test(`every ${one} the wrapper declares is read by something`, () => {
     const handed = new Set(forwarded(wrapper, "check.yml", kind).map(([key]) => key));
+    const jobs = mapAt(wrapper.document, "jobs");
     const own = ownJobs(wrapper);
     const unread = Object.keys(declared(wrapper, kind)).filter(
-      (name) => !handed.has(name) && !own.some((job) => reads(job, kind, name)),
+      (name) => !handed.has(name) && !own.some((job) => reads(jobs[job], kind, name)),
     );
 
     expect(unread).toEqual([]);
@@ -487,6 +494,75 @@ test("every input the wrapper declares reaches dev-config's call or is guarded f
   expect(stranded).toEqual([]);
 });
 
+/** What marks dev-config's refusals step: it defines the function every refusal goes through. */
+const REFUSES = /^\s*refuse\(\)\s*\{/mu;
+
+/**
+ * The inputs of a dev-config `check.yml` that its static job acts on, which is
+ * the half of theirs this workflow runs.
+ *
+ * Their refusals step is left out, because it maps into its shell every input
+ * it might refuse, the database job's among them, and reading it would count
+ * all of those as acted on.
+ */
+function actedOn(read: Read): string[] {
+  const steps = stepsOf(read.document, "static");
+  const refusals = steps.filter((step) => REFUSES.test(textAt(step, "run") ?? ""));
+  if (refusals.length !== 1) {
+    throw new Error(
+      `dev-config's static job has ${refusals.length} steps defining refuse(), and the one this suite leaves out is the single step that does`,
+    );
+  }
+  const kept = {
+    ...mapAt(mapAt(read.document, "jobs"), "static"),
+    steps: steps.filter((step) => !refusals.includes(step)),
+  };
+  return Object.keys(declared(read, "inputs"))
+    .filter((name) => reads(kept, "inputs", name))
+    .toSorted(alphabetically);
+}
+
+/**
+ * Which of dev-config's inputs the call hands on is read off dev-config itself:
+ * exactly the ones its static job acts on.
+ *
+ * The README's table and its refused list hold that every input of theirs was
+ * decided about, and nothing there holds which way. An input their static job
+ * acts on and this workflow lists as refused is a step of theirs a consumer can
+ * never turn on from here; one their database job alone reads and this workflow
+ * forwards is a refusal from a job the consumer never asked for.
+ */
+test("the call hands on exactly the inputs dev-config's static job acts on", () => {
+  expect(
+    forwarded(wrapper, "check.yml", "inputs")
+      .map(([key]) => key)
+      .toSorted(alphabetically),
+  ).toEqual(actedOn(upstream));
+});
+
+/**
+ * A step of theirs that reads an input through its `env:` acts on it as much as
+ * one that hands it to an action, so the rule above has to hold against a
+ * dev-config whose mutation lane takes its tests that way.
+ */
+test("an input dev-config's static job reads only through a step's env is one the call hands on", () => {
+  const copy = readAs(structuredClone(upstream.document));
+  const lane = stepsOf(copy.document, "static").find((step) =>
+    (textAt(step, "uses") ?? "").includes("actions/mutation-lane"),
+  );
+  if (!isForeign(lane)) throw new Error("dev-config's static job has no mutation-lane step");
+  const given = mapAt(lane, "with");
+  expect(given["mutation-tests"]).toBe("${{ inputs['mutation-tests'] }}");
+  delete given["mutation-tests"];
+  lane["env"] = { MUTATION_TESTS: "${{ inputs['mutation-tests'] }}" };
+
+  expect(
+    forwarded(wrapper, "check.yml", "inputs")
+      .map(([key]) => key)
+      .toSorted(alphabetically),
+  ).toEqual(actedOn(copy));
+});
+
 test("nothing in the call is this workflow answering for its consumer", () => {
   // A literal here would be this workflow deciding a value nothing in it
   // declares, and dev-config cannot tell that from the consumer's own answer.
@@ -632,8 +708,7 @@ test("every action the wrapper pins ships the actions this repo has now", async 
 
 /** The step of a workflow's database job that runs a gate of the named action. */
 function gateStep(read: Read, action: string): Readonly<Record<string, string>> {
-  const steps = mapAt(mapAt(read.document, "jobs"), "database")["steps"];
-  const found = (isList(steps) ? steps : []).find((step) =>
+  const found = stepsOf(read.document, "database").find((step) =>
     (textAt(step, "uses") ?? "").includes(action),
   );
   if (found === undefined) throw new Error(`no step of the database job uses ${action}`);
@@ -681,9 +756,8 @@ const PLACEHOLDER = "${PORT}";
 
 /** The env of the step of this workflow's database job that allocates the app's port. */
 function allocationEnv(): Foreign {
-  const steps = mapAt(mapAt(wrapper.document, "jobs"), "database")["steps"];
   return mapAt(
-    (isList(steps) ? steps : []).find((step) => textAt(step, "id") === "app"),
+    stepsOf(wrapper.document, "database").find((step) => textAt(step, "id") === "app"),
     "env",
   );
 }

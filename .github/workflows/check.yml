@@ -40,6 +40,9 @@ on:
       mutation-floor:
         type: string
         default: ""
+      mutation-tests:
+        type: string
+        default: ""
       duplicate-code:
         type: boolean
         default: false
@@ -166,7 +169,7 @@ permissions:
 
 jobs:
   static:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@d93cc1e5cac170a136924ee6db982bd906557e05 # v0.72.1
+    uses: gokayo43/dev-config/.github/workflows/check.yml@28c5b3cf9672a47727aeea555333203cd3f2849b # v0.73.1
     with:
       build: ${{ inputs.build }}
       build-cache: ${{ inputs['build-cache'] }}
@@ -175,6 +178,7 @@ jobs:
       compose: ${{ inputs.compose }}
       mutation-lane: ${{ inputs['mutation-lane'] }}
       mutation-floor: ${{ inputs['mutation-floor'] }}
+      mutation-tests: ${{ inputs['mutation-tests'] }}
       duplicate-code: ${{ inputs['duplicate-code'] }}
       contract-exemptions: ${{ inputs['contract-exemptions'] }}
       stack-allowlist: ${{ inputs['stack-allowlist'] }}
@@ -447,7 +451,7 @@ jobs:
       # their host-key lookup is made with, the second is where GitHub publishes
       # those keys, and neither is a fact a consumer of this workflow has an
       # answer to.
-      - uses: gokayo43/dev-config/.github/actions/install@0eac703548f4418d726599227ab00b253e6627db # v0.72.0
+      - uses: gokayo43/dev-config/.github/actions/install@5cf4b9abf2828de848d0b9d7b0b41e724d8e64d3 # v0.73.0
         with:
           git-ssh-key: ${{ secrets['git-ssh-key'] }}
 
@@ -457,7 +461,7 @@ jobs:
       # build has run. Without it such a repo is refused for declaring no
       # migrations, which is a false answer to the question this gate asks.
       - if: inputs.build
-        uses: gokayo43/dev-config/.github/actions/build@0eac703548f4418d726599227ab00b253e6627db # v0.72.0
+        uses: gokayo43/dev-config/.github/actions/build@5cf4b9abf2828de848d0b9d7b0b41e724d8e64d3 # v0.73.0
         with:
           cache: ${{ inputs['build-cache'] }}
 
