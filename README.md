@@ -156,6 +156,7 @@ here**, where it runs against the server that consumer pinned.
 | `compose`             | `boolean` |
 | `mutation-lane`       | `boolean` |
 | `mutation-floor`      | `string`  |
+| `mutation-tests`      | `string`  |
 | `duplicate-code`      | `boolean` |
 | `contract-exemptions` | `string`  |
 | `stack-allowlist`     | `string`  |
@@ -175,7 +176,7 @@ here**, where it runs against the server that consumer pinned.
 | `route-allowlist`     | `string`  |
 | `datetime-allowlist`  | `string`  |
 
-The first thirteen are handed to dev-config's `check.yml` unchanged, so
+The first fourteen are handed to dev-config's `check.yml` unchanged, so
 [its README](https://github.com/gokayo43/dev-config#ci) is the reference for
 what one does and for the conditions under which it refuses one. The inputs
 here carry no description of their own for that reason — a second copy of that

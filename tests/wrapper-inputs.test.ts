@@ -487,6 +487,47 @@ test("every input the wrapper declares reaches dev-config's call or is guarded f
   expect(stranded).toEqual([]);
 });
 
+/**
+ * Which of dev-config's inputs the call hands on is read off dev-config itself:
+ * exactly the ones its static job acts on, since that job is the half of theirs
+ * this workflow runs.
+ *
+ * The README's table and its refused list hold that every input of theirs was
+ * decided about, and nothing there holds which way. An input their static job
+ * acts on and this workflow lists as refused is a step of theirs a consumer can
+ * never turn on from here; one their database job alone reads and this workflow
+ * forwards is a refusal from a job the consumer never asked for. A step's `env:`
+ * is left out because their refusals step maps every input into its shell, so
+ * reading through it would count all of them as acted on.
+ */
+test("the call hands on exactly the inputs dev-config's static job acts on", () => {
+  const job = mapAt(upstream.document, "jobs")["static"];
+  if (!isForeign(job)) {
+    throw new Error(
+      "dev-config's check.yml has no `static` job, which is the half of it this workflow calls",
+    );
+  }
+  const steps = job["steps"];
+  const actedOn = {
+    ...job,
+    steps: (isList(steps) ? steps : []).map((step) => {
+      if (!isForeign(step)) return step;
+      const { env: _mapped, ...rest } = step;
+      return rest;
+    }),
+  };
+
+  expect(
+    forwarded(wrapper, "check.yml", "inputs")
+      .map(([key]) => key)
+      .toSorted(alphabetically),
+  ).toEqual(
+    Object.keys(declared(upstream, "inputs"))
+      .filter((name) => reads(actedOn, "inputs", name))
+      .toSorted(alphabetically),
+  );
+});
+
 test("nothing in the call is this workflow answering for its consumer", () => {
   // A literal here would be this workflow deciding a value nothing in it
   // declares, and dev-config cannot tell that from the consumer's own answer.

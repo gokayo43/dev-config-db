@@ -122,7 +122,8 @@ that has been improved says so at the line that improved it.
   the commit the workflows call: every input the wrapper hands on reaches the
   call under its own name, every input it declares is read by something and is
   declared with dev-config's own type and default, nothing is forwarded that
-  dev-config does not declare, the call carries no literal at all — every value
+  dev-config does not declare, what it forwards is exactly what dev-config's
+  static job acts on, the call carries no literal at all — every value
   in it is a consumer's input handed on — only one job calls that workflow at
   all, what the README
   tables and what it says is refused cover dev-config's input surface exactly,
