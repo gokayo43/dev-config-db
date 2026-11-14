@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { mapAt } from "../.github/actions/_lib/foreign.ts";
-import { DATA_DIRECTORY_BYTES, startServer, WITHIN } from "../.github/actions/db-server/server.ts";
+import {
+  DATA_DIRECTORY_BYTES,
+  docker as dockerAsked,
+  removeContainer as removed,
+  startServer,
+  WITHIN,
+} from "../.github/actions/db-server/server.ts";
 
 import {
   DEFAULT,
@@ -47,19 +53,9 @@ function named(what: string): string {
   return `dev-config-db-case-${process.pid}-${what}`;
 }
 
-/** Whatever this case started, gone — asserted nowhere, because a leaked container is not this file's verdict. */
-async function removed(name: string): Promise<void> {
-  const proc = Bun.spawn(["docker", "rm", "--force", "--volumes", name], {
-    stdout: "ignore",
-    stderr: "ignore",
-  });
-  await proc.exited;
-}
-
-/** What docker answers to one command, and whether it answered at all. */
+/** What docker answers to one command, trimmed, and whether it answered at all. */
 async function docker(...args: string[]): Promise<{ status: number; stdout: string }> {
-  const proc = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "ignore" });
-  const [stdout, status] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+  const { status, stdout } = await dockerAsked(args);
   return { status, stdout: stdout.trim() };
 }
 
@@ -262,7 +258,7 @@ test("two servers from one declaration are two ports, so neither job is the othe
 }, 300_000);
 
 /**
- * The four wiring faults, which are refused before docker is asked anything: a
+ * The four wiring faults, which are refused before a server is started: a
  * composite action maps an input nobody passed to the empty string, and the
  * other three name a server this step is not the one starting. Each costs
  * nothing to ask and saves the whole bound to answer.
@@ -278,6 +274,26 @@ test("an empty image is refused as the wiring fault it is", async () => {
   expect(verdict.problems).toHaveLength(1);
   expect(verdict.problems[0]).toContain("database-image input is empty");
 });
+
+/**
+ * The job reads the output of the container its step names, whether or not the
+ * step started one, so a refused run must leave no container under that name:
+ * one a killed earlier run left behind would be read as this run's server.
+ */
+test("a refused run leaves no container a killed earlier run left under its name", async () => {
+  const as = named("stale");
+  try {
+    const left = await docker("run", "--detach", "--name", as, NOT_A_SERVER);
+    expect(left.status).toBe(0);
+
+    const verdict = await startServer({ image: "", url: SERVER, as, within: BRIEF });
+
+    expect(verdict.problems).toHaveLength(1);
+    expect((await docker("container", "inspect", as)).status).toBe(1);
+  } finally {
+    await removed(as);
+  }
+}, 60_000);
 
 test("a URL naming a port is refused, because the port is not the caller's to name", async () => {
   const verdict = await startServer({
@@ -318,14 +334,13 @@ test("a URL naming an account the image never creates is refused", async () => {
 });
 
 /**
- * The step's bound has to end before the job's: a server that never answers is
- * reported by this step with its own output, where the job's timeout would
- * cancel the step and say nothing about the server.
+ * The step's bound has to end before the job's, or the job's timeout cancels
+ * the step and says nothing about the server. Below the job's limit is what a
+ * test can hold; the steps before this one and the image pull spend the rest.
  */
 test("the step's bound is below the database job's timeout", async () => {
-  const job = mapAt(mapAt(await wrapperDocument(), "jobs"), "database");
-  const minutes = job["timeout-minutes"];
+  const minutes = mapAt(mapAt(await wrapperDocument(), "jobs"), "database")["timeout-minutes"];
+  if (typeof minutes !== "number") throw new Error("the database job declares no timeout-minutes");
 
-  expect(typeof minutes).toBe("number");
-  expect(WITHIN).toBeLessThan(Number(minutes) * 60_000);
+  expect(WITHIN).toBeLessThan(minutes * 60_000);
 });

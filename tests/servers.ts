@@ -3,7 +3,7 @@ import { afterEach } from "bun:test";
 
 import { isList } from "../.github/actions/_lib/foreign.ts";
 import { connection } from "../.github/actions/db-replay/database.ts";
-import { startServer } from "../.github/actions/db-server/server.ts";
+import { removeContainer, startServer } from "../.github/actions/db-server/server.ts";
 
 import { defaultServerImage, root } from "./workflow.ts";
 
@@ -179,11 +179,7 @@ export async function stop(): Promise<void> {
   for (const name of asked) {
     const product = PRODUCTS.find((each) => each.name === name);
     if (product === undefined) continue;
-    const proc = Bun.spawn(["docker", "rm", "--force", "--volumes", containerFor(product)], {
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    await proc.exited;
+    await removeContainer(containerFor(product));
   }
 }
 

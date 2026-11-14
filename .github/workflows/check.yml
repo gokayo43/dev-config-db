@@ -370,8 +370,8 @@ jobs:
       # What the gate steps below are handed, read here and nowhere else,
       # because here is the last moment in this job at which no line of the
       # graded repo's own code has run yet — not its install scripts, not its
-      # build, not its migrator. A step takes the ones it needs: the search path
-      # goes to the step that resolves a program by name.
+      # build, not its migrator. A step takes the ones it needs, and every
+      # `run:` step after the install takes the search path.
       #
       # A step writes $GITHUB_ENV and $GITHUB_PATH and the runner folds both
       # into the environment of every LATER step; a step output cannot be
@@ -532,6 +532,7 @@ jobs:
         env:
           HEALTH_URL: ${{ inputs['health-url'] || 'http://localhost:${PORT}/api/health' }}
           BUN: ${{ steps.pinned.outputs.bun }}
+          PATH: ${{ steps.pinned.outputs.path }}
         run: |
           set -euo pipefail
           port=$("$BUN" -e 'const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
@@ -570,22 +571,57 @@ jobs:
           bun: ${{ steps.pinned.outputs.bun }}
           path: ${{ steps.pinned.outputs.path }}
 
-      # The server's own output, read while its container still exists: the
-      # removal below takes the output with it, and a gate that met a dead or
-      # full server reports only a refused connection or a refused write.
-      - name: Keep the server's own output
+      # The server this job started: its output kept, then the container taken
+      # down by the job that started it.
+      #
+      # A composite action cannot do this for itself: `post:` belongs to
+      # JavaScript and Docker actions, and every action here is a composite one
+      # — so a container started by a step outlives the job unless a step of the
+      # job removes it. On a shared, persistent runner that is a database server
+      # per consumer workspace, resident with the last run's replayed schemas in
+      # memory on a published loopback port. The server step reclaims the name
+      # before it creates, so what this prevents is the residency rather than
+      # the next run.
+      #
+      # The output is read first because the removal takes it with the
+      # container, and a gate that met a dead or full server reports only a
+      # refused connection or a refused write. A read that fails is a warning:
+      # the evidence is missing, and the gates' verdicts stand.
+      #
+      # `always()` for the reason the upload below carries. PATH is the one the
+      # job read before the graded repo ran, for the reason the `pinned` step
+      # gives: a `docker` that repo put first on the path would otherwise decide
+      # what this step reads and whether the server is removed.
+      #
+      # Redis is the runner's to remove — it is a service container, and the
+      # runner stops it with the job.
+      - name: Keep the server's output and take the server down
         if: ${{ always() }}
         env:
           CONTAINER: ${{ steps.server.outputs.container }}
+          PATH: ${{ steps.pinned.outputs.path }}
         run: |
           set -euo pipefail
-          # Empty when the server step never ran, and absent when `docker run`
-          # itself failed: either way there is no output to keep.
-          if [ -z "$CONTAINER" ] || ! docker container inspect "$CONTAINER" >/dev/null 2>&1; then
-            echo "no server container to read"
+          # Empty when the server step never ran — a checkout that failed, a
+          # cancelled job. `docker rm` refuses an empty name, which would fail
+          # a job over having nothing to clean up.
+          if [ -z "$CONTAINER" ]; then
+            echo "no server was started by this job"
             exit 0
           fi
-          docker logs "$CONTAINER" > "$RUNNER_TEMP/database-server.log" 2>&1
+          # Absent when `docker run` itself failed, or when the server step
+          # refused its wiring: nothing to read.
+          if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
+            docker logs "$CONTAINER" > "$RUNNER_TEMP/database-server.log" 2>&1 \
+              || echo "::warning::the database server's output could not be read; database-server.log is missing from the evidence"
+          else
+            echo "no server container to read"
+          fi
+          # `--force` on a name docker does not know exits 0 (probed on docker
+          # 29.1.3). `--volumes` takes any anonymous volume the image declared,
+          # which an image keeping its data outside the in-memory
+          # `/var/lib/mysql` still creates.
+          docker rm --force --volumes "$CONTAINER" >/dev/null
 
       # Everything the steps above wrote into the runner, which is deleted with
       # the runner. The upload belongs to the job rather than to either action:
@@ -631,45 +667,3 @@ jobs:
             ${{ runner.temp }}/route-log-after.json
           # Each of these is written by a step that may not have been reached.
           if-no-files-found: ignore
-
-      # The server this job started, taken down by the job that started it.
-      #
-      # A composite action cannot do this for itself: `post:` belongs to
-      # JavaScript and Docker actions, and every action here is a composite one
-      # — so a container started by a step outlives the job unless a step of the
-      # job removes it. On a runner that is thrown away that costs nothing; on a
-      # shared, persistent one it is a database server per consumer workspace,
-      # resident forever, holding the last run's replayed schemas in memory on
-      # a published loopback port. The server step reclaims the name before it
-      # creates, so what this prevents is the residency rather than the next
-      # run.
-      #
-      # `always()` for the reason the upload above carries: the runs whose
-      # server is most worth removing are the ones that failed or hit the job's
-      # own timeout. Last, so the evidence is published before anything is torn
-      # down.
-      #
-      # Redis is the runner's to remove — it is a service container, and the
-      # runner stops it with the job.
-      - name: Take the server down
-        if: ${{ always() }}
-        env:
-          CONTAINER: ${{ steps.server.outputs.container }}
-        run: |
-          set -euo pipefail
-          # Empty when the server step never ran — a checkout that failed, a
-          # cancelled job — and that is a job with no container rather than a
-          # state to report. Asked because `docker rm` refuses an empty name
-          # (exit 1, "container name cannot be empty"), which would fail a job
-          # over having nothing to clean up.
-          if [ -z "$CONTAINER" ]; then
-            echo "no server was started by this job"
-            exit 0
-          fi
-          # No `|| true` under it: `--force` on a name docker does not know is
-          # idempotent — it says so on stderr and exits 0 (probed on docker
-          # 29.1.3) — so a server that died before this step is already the
-          # outcome this step wants. `--volumes` takes any anonymous volume the
-          # image declared with it, which an image keeping its data outside the
-          # in-memory `/var/lib/mysql` still creates.
-          docker rm --force --volumes "$CONTAINER" >/dev/null

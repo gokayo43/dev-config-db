@@ -38,10 +38,12 @@ What such a runner has to provide, beyond those two labels:
 
 - **A docker daemon it can reach.** The server the database job grades is a
   container this workflow starts, and Redis is a service container beside it.
-- **Memory for the server's data directory**, which is in memory rather than on
-  disk: about 200 MB fresh and at most 2 GB, for each database job running at
-  once. [docs/gates/db-server.md](docs/gates/db-server.md), "Where its data
-  lives", is the measurement and the cap.
+- **Memory for the server's data directory**, which is in memory for an image
+  that keeps it at `/var/lib/mysql`, as both certified images do: about 200 MB
+  fresh and at most 2 GB, for each database job running at once and each
+  container a killed run left behind until the next run reclaims it.
+  [docs/gates/db-server.md](docs/gates/db-server.md), "Where its data lives", is
+  the measurement and the cap.
 - **Passwordless `sudo`**, for dev-config's test-suite gate inside the `static`
   job — their
   [docs/gates/test-suite.md](https://github.com/gokayo43/dev-config/blob/main/docs/gates/test-suite.md)

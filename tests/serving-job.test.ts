@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { type Foreign, isForeign, isList, mapAt, textAt } from "../.github/actions/_lib/foreign.ts";
 
@@ -315,48 +318,90 @@ test("every gate takes the database from the step that started it, not from the 
   ]);
 });
 
-/**
- * The container the server step created, removed by the job that asked for it.
- *
- * A composite action has no `post:` — that belongs to JavaScript and Docker
- * actions — so nothing in the action can take its own container down, and on a
- * persistent runner what that leaves behind is a database server per consumer
- * workspace, resident between runs with the last run's schemas in it. The
- * removal is the job's, it is last, and it runs whatever happened to the run:
- * the failed and the timed-out ones are exactly the runs whose server would
- * otherwise stay.
- */
-test("the job takes its server down, whatever happened to the run", () => {
+/** The step that keeps the server's output and removes its container. */
+function serverRemoval(): { step: Foreign; at: number } {
   const steps = jobSteps();
-  const last = steps.at(-1);
+  const at = steps.findIndex((step) => (textAt(step, "run") ?? "").includes("docker rm"));
+  const step = steps[at];
+  if (step === undefined) throw new Error(`${WRAPPER}'s database job never removes its server`);
+  return { step, at };
+}
 
-  expect(textAt(last, "if")).toBe("${{ always() }}");
+/**
+ * A composite action has no `post:`, so the job removes the container its
+ * server step created, on every run: the failed and the timed-out ones are the
+ * runs whose server would otherwise stay resident. The removal takes the
+ * server's output with it, so the same step reads the output first, and both
+ * happen before the upload that carries the output.
+ */
+test("the job keeps its server's output and then takes the server down, before the upload, whatever happened to the run", () => {
+  const { step, at } = serverRemoval();
+  const run = textAt(step, "run") ?? "";
+  const upload = jobSteps().findIndex((each) =>
+    (textAt(each, "uses") ?? "").includes("upload-artifact"),
+  );
+
+  expect(textAt(step, "if")).toBe("${{ always() }}");
+  expect(at).toBeLessThan(upload);
+  expect(run.indexOf("docker logs")).toBeGreaterThan(-1);
+  expect(run.indexOf("docker logs")).toBeLessThan(run.indexOf("docker rm --force"));
   // `--volumes`, or an image that keeps its data outside the in-memory data
   // directory leaves an anonymous volume on the runner's disk every run.
-  expect(textAt(last, "run")).toContain("docker rm --force --volumes");
-  // The container it removes is the one the server step named, rather than a
-  // name this file derives a second time.
-  expect(textAt(mapAt(last, "env"), "CONTAINER")).toBe("${{ steps.server.outputs.container }}");
+  expect(run).toContain("docker rm --force --volumes");
+  // The container the server step named, rather than a name derived twice.
+  expect(textAt(mapAt(step, "env"), "CONTAINER")).toBe("${{ steps.server.outputs.container }}");
+});
+
+/** A directory holding a `docker` that records each call and fails the ones named. */
+async function fakeDocker(failing: string): Promise<AsyncDisposable & { dir: string }> {
+  const dir = await mkdtemp(join(tmpdir(), "fake-docker-"));
+  await writeFile(
+    join(dir, "docker"),
+    `#!/bin/sh\necho "$*" >> "${dir}/calls"\n[ "$1" = "${failing}" ] && exit 1\nexit 0\n`,
+    { mode: 0o755 },
+  );
+  return { dir, [Symbol.asyncDispose]: () => rm(dir, { recursive: true, force: true }) };
+}
+
+/**
+ * The output is evidence and nothing more, so a read that fails must leave the
+ * job's verdict as the gates made it and must not keep the server resident.
+ */
+test("a server output that cannot be read is a warning, and the server is still removed", async () => {
+  await using docker = await fakeDocker("logs");
+  const proc = Bun.spawn(["bash", "-c", textAt(serverRemoval().step, "run") ?? ""], {
+    env: {
+      CONTAINER: "db-gate-server-x",
+      RUNNER_TEMP: docker.dir,
+      PATH: `${docker.dir}:/usr/bin:/bin`,
+    },
+    stdout: "pipe",
+  });
+  const [out, status] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+
+  expect(status).toBe(0);
+  expect(out).toContain("::warning::");
+  expect(await Bun.file(join(docker.dir, "calls")).text()).toContain(
+    "rm --force --volumes db-gate-server-x",
+  );
 });
 
 /**
- * The removal takes the server's output with it, so the output is read before
- * the removal and on every run: the failed and the timed-out runs are the ones
- * whose server output says why.
+ * The class `pinned` exists for: a step that runs after the graded repo's
+ * install resolves programs through the path that repo could have prepended to,
+ * unless the step declares the path read before it ran.
  */
-test("the server's own output is kept before the upload, whatever happened to the run", () => {
+test("every run step after the install takes the path read before the graded repo ran", () => {
   const steps = jobSteps();
-  const keep = steps.findIndex((step) => (textAt(step, "run") ?? "").includes("docker logs"));
-  const upload = steps.findIndex((step) =>
-    (textAt(step, "uses") ?? "").includes("upload-artifact"),
-  );
+  const install = steps.findIndex((step) => (textAt(step, "uses") ?? "").includes(INSTALL));
+  const unpinned = steps
+    .slice(install + 1)
+    .filter((step) => textAt(step, "run") !== undefined)
+    .filter((step) => textAt(mapAt(step, "env"), "PATH") !== "${{ steps.pinned.outputs.path }}")
+    .map((step) => textAt(step, "name") ?? textAt(step, "id") ?? "(unnamed)");
 
-  expect(keep).toBeGreaterThan(-1);
-  expect(keep).toBeLessThan(upload);
-  expect(textAt(steps[keep], "if")).toBe("${{ always() }}");
-  expect(textAt(mapAt(steps[keep], "env"), "CONTAINER")).toBe(
-    "${{ steps.server.outputs.container }}",
-  );
+  expect(install).toBeGreaterThan(-1);
+  expect(unpinned).toEqual([]);
 });
 
 test("every step that uses the database comes after the step that starts it", () => {
