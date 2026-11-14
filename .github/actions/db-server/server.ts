@@ -20,6 +20,22 @@ import { databaseIn, rowsFrom, textIn } from "../db-replay/database.ts";
 /** How often the poll below asks, which is a compromise between a fast start and a busy log. */
 const ASK_EVERY = 500;
 
+/**
+ * How long the server has to answer a query once `docker run` has returned,
+ * which is after any image pull. Measured 2026-11-14 from calling `docker run`,
+ * image local, data directory in memory: 2.6-5.6 s on an idle host, and 60 s
+ * (MariaDB) and 90 s (MySQL 8) under `--cpus 0.05`, the share a job can get on
+ * a contended runner. docs/gates/db-server.md, "The bound", says what the
+ * database job's `timeout-minutes` leaves around it.
+ */
+export const WITHIN = 300_000;
+
+/**
+ * The cap on the in-memory data directory: a fresh one holds about 200 MB, and
+ * an unsized tmpfs may take half the host's memory.
+ */
+export const DATA_DIRECTORY_BYTES = 2 * 1024 ** 3;
+
 /** Where and from what a server is started, and how long it has to answer. */
 export interface Server {
   /** The image, pinned by digest, that the calling repo declared. */
@@ -42,7 +58,7 @@ export interface Started extends Verdict {
 }
 
 /** One docker command, and everything it said. */
-async function docker(
+export async function docker(
   args: readonly string[],
   environment: Readonly<Record<string, string>> = {},
 ): Promise<{ readonly status: number; readonly stdout: string; readonly stderr: string }> {
@@ -57,6 +73,14 @@ async function docker(
     proc.exited,
   ]);
   return { status, stdout, stderr };
+}
+
+/**
+ * The container gone, with whatever volume its image declared: `--force` on a
+ * name docker does not know exits 0.
+ */
+export async function removeContainer(name: string): Promise<void> {
+  await docker(["rm", "--force", "--volumes", name]);
 }
 
 /**
@@ -160,14 +184,15 @@ function on(url: string, port: string): string {
  * are the ones this container came up with, which a ping does not.
  */
 export async function startServer(asked: Server): Promise<Started> {
+  const { image, url, as, within } = asked;
+  // Reclaimed rather than assumed absent, and before anything can refuse: a
+  // run killed outright leaves the container behind, the next run derives the
+  // same name, and the job reads the output of whatever container holds it.
+  await removeContainer(as);
   const problems = wiring(asked);
   if (problems.length > 0) return { problems };
 
-  const { image, url, as, within } = asked;
   const server = new URL(url);
-  // Reclaimed rather than assumed absent: a run killed outright leaves the
-  // container behind, and the next run derives the same name.
-  await docker(["rm", "--force", as]);
   // The password goes through the environment rather than the argument list:
   // `--env NAME` with no value hands over the one this process holds, so it
   // never reaches the command line the runner logs or another process can read.
@@ -188,6 +213,11 @@ export async function startServer(asked: Server): Promise<Started> {
       // The assignment is read back below.
       "--publish",
       "127.0.0.1::3306",
+      // Both certified images keep their data directory here and declare it a
+      // volume; a tmpfs over the path takes the volume's place, so docker
+      // creates none.
+      "--tmpfs",
+      `/var/lib/mysql:rw,size=${DATA_DIRECTORY_BYTES}`,
       "--env",
       "MYSQL_ROOT_PASSWORD",
       "--env",

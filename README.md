@@ -38,6 +38,12 @@ What such a runner has to provide, beyond those two labels:
 
 - **A docker daemon it can reach.** The server the database job grades is a
   container this workflow starts, and Redis is a service container beside it.
+- **Memory for the server's data directory**, which is in memory for an image
+  that keeps it at `/var/lib/mysql`, as both certified images do: about 200 MB
+  fresh and at most 2 GB, for each database job running at once and each
+  container a killed run left behind until the next run reclaims it.
+  [docs/gates/db-server.md](docs/gates/db-server.md), "Where its data lives", is
+  the measurement and the cap.
 - **Passwordless `sudo`**, for dev-config's test-suite gate inside the `static`
   job — their
   [docs/gates/test-suite.md](https://github.com/gokayo43/dev-config/blob/main/docs/gates/test-suite.md)
@@ -71,10 +77,10 @@ case, not the corner one, and nothing in the database job may assume otherwise:
   well** — in `start-command`, e.g. `env PORT=8080 bun run start` — and two
   overlapping runs of that caller collide on it. The boot gate refuses a
   `health-url` something already answers rather than grading whatever that is.
-- **The job takes its server container down when it ends**, on every run
-  including the failed and the cancelled ones. A composite action has no `post:`
-  of its own, so without that step a persistent runner keeps one database server
-  per consumer workspace resident between runs.
+- **The job takes its server container down when it ends**, with its volumes,
+  on every run including the failed and the cancelled ones. A composite action
+  has no `post:` of its own, so without that step a persistent runner keeps one
+  database server per consumer workspace resident between runs.
 
 ## Calling it
 

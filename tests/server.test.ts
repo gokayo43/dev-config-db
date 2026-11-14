@@ -1,9 +1,24 @@
 import { describe, expect, test } from "bun:test";
 
-import { startServer } from "../.github/actions/db-server/server.ts";
+import { mapAt } from "../.github/actions/_lib/foreign.ts";
+import {
+  DATA_DIRECTORY_BYTES,
+  docker as dockerAsked,
+  removeContainer as removed,
+  startServer,
+  WITHIN,
+} from "../.github/actions/db-server/server.ts";
 
-import { DEFAULT, PRODUCTS, emptyDatabase, noteOf, query, server } from "./servers.ts";
-import { serviceImages } from "./workflow.ts";
+import {
+  DEFAULT,
+  PRODUCTS,
+  containerFor,
+  emptyDatabase,
+  noteOf,
+  query,
+  server,
+} from "./servers.ts";
+import { serviceImages, wrapperDocument } from "./workflow.ts";
 
 /**
  * The step that stands where a service container used to, and the reason it has
@@ -38,10 +53,21 @@ function named(what: string): string {
   return `dev-config-db-case-${process.pid}-${what}`;
 }
 
-/** Whatever this case started, gone — asserted nowhere, because a leaked container is not this file's verdict. */
-async function removed(name: string): Promise<void> {
-  const proc = Bun.spawn(["docker", "rm", "--force", name], { stdout: "ignore", stderr: "ignore" });
-  await proc.exited;
+/** What docker answers to one command, trimmed, and whether it answered at all. */
+async function docker(...args: string[]): Promise<{ status: number; stdout: string }> {
+  const { status, stdout } = await dockerAsked(args);
+  return { status, stdout: stdout.trim() };
+}
+
+/** The names of the docker volumes mounted into a container. */
+async function volumesOf(name: string): Promise<string[]> {
+  const { stdout } = await docker(
+    "inspect",
+    "--format",
+    '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}',
+    name,
+  );
+  return stdout.split(" ").filter((each) => each !== "");
 }
 
 for (const product of PRODUCTS) {
@@ -70,6 +96,26 @@ for (const product of PRODUCTS) {
       // declaration it was handed would carry no port at all.
       expect(port).not.toBe("");
       expect(note).toContain(`came up on port ${port}`);
+    }, 180_000);
+
+    /**
+     * The kernel's own view from inside the container, never the option string
+     * the step passed. Kills a tmpfs at a path this image does not keep its data
+     * in, a tmpfs with no size (half the host's memory), and a step that leaves
+     * the image's declared volume beside the tmpfs.
+     */
+    test("the data directory is a capped tmpfs, and the container has no docker volume", async () => {
+      await server(product);
+      const as = containerFor(product);
+      const mounts = await docker("exec", as, "cat", "/proc/mounts");
+      const data = mounts.stdout
+        .split("\n")
+        .map((line) => line.split(" "))
+        .find(([, mountPoint]) => mountPoint === "/var/lib/mysql");
+
+      expect(data?.[2]).toBe("tmpfs");
+      expect((data?.[3] ?? "").split(",")).toContain(`size=${DATA_DIRECTORY_BYTES / 1024}k`);
+      expect((await docker("inspect", "--format", "{{json .Mounts}}", as)).stdout).toBe("[]");
     }, 180_000);
 
     test("a database made on it is the database the gates then read", async () => {
@@ -155,11 +201,20 @@ test("a container left behind by a previous run is reclaimed rather than collide
     // report docker's own "name is already in use" — a fault of this repo's,
     // reported to a consumer as if their call were wrong.
     await startServer({ image: NOT_A_SERVER, url, as, within: BRIEF });
+    // The image declares a volume outside /var/lib/mysql, so the first
+    // container has one, and the reclaim has to take it with the container.
+    const left = await volumesOf(as);
     const again = await startServer({ image: NOT_A_SERVER, url, as, within: BRIEF });
 
     expect(again.problems).toHaveLength(1);
     expect(again.problems[0]).toContain("never answered a query");
     expect(again.problems[0]).not.toContain("already in use");
+    expect(left).not.toEqual([]);
+    for (const volume of left) {
+      expect(`${volume}: ${(await docker("volume", "inspect", volume)).status}`).toBe(
+        `${volume}: 1`,
+      );
+    }
   } finally {
     await removed(as);
   }
@@ -203,7 +258,7 @@ test("two servers from one declaration are two ports, so neither job is the othe
 }, 300_000);
 
 /**
- * The four wiring faults, which are refused before docker is asked anything: a
+ * The four wiring faults, which are refused before a server is started: a
  * composite action maps an input nobody passed to the empty string, and the
  * other three name a server this step is not the one starting. Each costs
  * nothing to ask and saves the whole bound to answer.
@@ -219,6 +274,26 @@ test("an empty image is refused as the wiring fault it is", async () => {
   expect(verdict.problems).toHaveLength(1);
   expect(verdict.problems[0]).toContain("database-image input is empty");
 });
+
+/**
+ * The job reads the output of the container its step names, whether or not the
+ * step started one, so a refused run must leave no container under that name:
+ * one a killed earlier run left behind would be read as this run's server.
+ */
+test("a refused run leaves no container a killed earlier run left under its name", async () => {
+  const as = named("stale");
+  try {
+    const left = await docker("run", "--detach", "--name", as, NOT_A_SERVER);
+    expect(left.status).toBe(0);
+
+    const verdict = await startServer({ image: "", url: SERVER, as, within: BRIEF });
+
+    expect(verdict.problems).toHaveLength(1);
+    expect((await docker("container", "inspect", as)).status).toBe(1);
+  } finally {
+    await removed(as);
+  }
+}, 60_000);
 
 test("a URL naming a port is refused, because the port is not the caller's to name", async () => {
   const verdict = await startServer({
@@ -256,4 +331,16 @@ test("a URL naming an account the image never creates is refused", async () => {
 
   expect(verdict.problems).toHaveLength(1);
   expect(verdict.problems[0]).toContain("initialises the server's root account");
+});
+
+/**
+ * The step's bound has to end before the job's, or the job's timeout cancels
+ * the step and says nothing about the server. Below the job's limit is what a
+ * test can hold; the steps before this one and the image pull spend the rest.
+ */
+test("the step's bound is below the database job's timeout", async () => {
+  const minutes = mapAt(mapAt(await wrapperDocument(), "jobs"), "database")["timeout-minutes"];
+  if (typeof minutes !== "number") throw new Error("the database job declares no timeout-minutes");
+
+  expect(WITHIN).toBeLessThan(minutes * 60_000);
 });
