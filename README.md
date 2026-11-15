@@ -147,34 +147,35 @@ skips — **a live consumer that owns migrations should pass `upgrade-gate: true
 here**, where it runs against the server that consumer pinned.
 [docs/gates/db-upgrade.md](docs/gates/db-upgrade.md) is what it does.
 
-| Input                 | Type      |
-| --------------------- | --------- |
-| `build`               | `boolean` |
-| `build-cache`         | `string`  |
-| `affected`            | `boolean` |
-| `nightly`             | `boolean` |
-| `compose`             | `boolean` |
-| `mutation-lane`       | `boolean` |
-| `mutation-floor`      | `string`  |
-| `mutation-tests`      | `string`  |
-| `duplicate-code`      | `boolean` |
-| `contract-exemptions` | `string`  |
-| `stack-allowlist`     | `string`  |
-| `data-jobs-external`  | `string`  |
-| `test-network`        | `string`  |
-| `test-suite-evidence` | `string`  |
-| `database`            | `string`  |
-| `database-image`      | `string`  |
-| `upgrade-gate`        | `boolean` |
-| `db-gate-evidence`    | `string`  |
-| `start-command`       | `string`  |
-| `health-url`          | `string`  |
-| `probe-command`       | `string`  |
-| `probe-timeout`       | `string`  |
-| `capacity-script`     | `string`  |
-| `capacity-path`       | `string`  |
-| `route-allowlist`     | `string`  |
-| `datetime-allowlist`  | `string`  |
+| Input                   | Type      |
+| ----------------------- | --------- |
+| `build`                 | `boolean` |
+| `build-cache`           | `string`  |
+| `affected`              | `boolean` |
+| `nightly`               | `boolean` |
+| `compose`               | `boolean` |
+| `mutation-lane`         | `boolean` |
+| `mutation-floor`        | `string`  |
+| `mutation-tests`        | `string`  |
+| `mutation-case-timeout` | `string`  |
+| `duplicate-code`        | `boolean` |
+| `contract-exemptions`   | `string`  |
+| `stack-allowlist`       | `string`  |
+| `data-jobs-external`    | `string`  |
+| `test-network`          | `string`  |
+| `test-suite-evidence`   | `string`  |
+| `database`              | `string`  |
+| `database-image`        | `string`  |
+| `upgrade-gate`          | `boolean` |
+| `db-gate-evidence`      | `string`  |
+| `start-command`         | `string`  |
+| `health-url`            | `string`  |
+| `probe-command`         | `string`  |
+| `probe-timeout`         | `string`  |
+| `capacity-script`       | `string`  |
+| `capacity-path`         | `string`  |
+| `route-allowlist`       | `string`  |
+| `datetime-allowlist`    | `string`  |
 
 Every input above `database` is handed to dev-config's `check.yml` unchanged, so
 [its README](https://github.com/gokayo43/dev-config#ci) is the reference for

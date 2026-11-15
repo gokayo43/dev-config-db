@@ -20,7 +20,7 @@
     "prepare": "lefthook install || true"
   },
   "devDependencies": {
-    "@gokayo43/dev-config": "github:gokayo43/dev-config#28c5b3cf9672a47727aeea555333203cd3f2849b",
+    "@gokayo43/dev-config": "github:gokayo43/dev-config#2022b5fa0e22b5e9dc88791106fad96bdbf9ad1e",
     "@types/bun": "1.4.2",
     "drizzle-orm": "0.45.2",
     "knip": "6.38.0",
