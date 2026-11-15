@@ -60,8 +60,8 @@ that has been improved says so at the line that improved it.
   call into dev-config's `check.yml` with the consumer's own `database` handed
   on — their enum's `external` is the value for a workflow that runs the
   database gates in that job's place, so one input decides both and this file
-  answers for nobody — the always-running
-  `refusals` job that fails a call asking for a database-job input without the
+  answers for nobody — the `refusals` job, which runs only when the database
+  job does not and fails a call asking for a database-job input without the
   job, and `database`, which is every database gate this repo has — one job, and
   CONTEXT.md's entry for the term says why there will stay one. Its server is a
   **step** rather than a service container, because the image is the consumer's
@@ -138,7 +138,10 @@ that has been improved says so at the line that improved it.
 
   `refusals.test.ts` runs the wrapper's own `run:` block — extracted from the
   shipped YAML rather than transcribed, with the environment derived from its
-  own `env:` block — over the whole truth table of the rule this workflow adds.
+  own `env:` block — over every call the `refusals` job runs on, and evaluates
+  each job's `if:` to hold which jobs a call starts. The probe pair is refused
+  in two places in one sentence, the `refusals` body and the database job's
+  first step, and the suite holds the two lines equal.
   `serving-job.test.ts` grades the wiring no gate can see from inside: which
   steps the job runs, what the app is given, whether every file a step leaves in
   the runner is actually uploaded, and that every step declares the pins above.
