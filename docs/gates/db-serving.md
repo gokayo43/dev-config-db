@@ -210,9 +210,11 @@ this exists to catch. What a repo still chooses is _what_ the ramp hits —
 `capacity-path`, a `capacity-script` of its own, and the reasoned
 `route-allowlist` for whatever neither can reach.
 
-**The number is a trend line, not a capacity claim.** GitHub's runners vary by
-machine, by neighbour and by hour, and the app is sharing one with a database
-server, a Redis and whatever else the job started. What it is good for is
+**The number is a trend line, not a capacity claim.** The job runs on a
+consumer's self-hosted runner, which shares its machine with that consumer's
+other jobs and whatever else the machine serves, so what it has to spare varies
+by neighbour and by hour, and the app shares the job with a database server, a
+Redis and whatever else the job started. What it is good for is
 noticing that a change moved the number by an order of magnitude. The number
 that answers "how much load does this hold" is a ramp against the deployed
 shape, which testing.md asks for before a surface takes real users and again
@@ -326,15 +328,19 @@ this workflow declares. What that leaves uncovered is one caller, named below.
 
 ## Evidence
 
-Everything these steps leave in the runner is uploaded as the artifact
-`db-gate-evidence` names, with the two schema dumps the replay compared:
+Everything the database job leaves in the runner is uploaded as the artifact
+`db-gate-evidence` names:
 
-| File                    | What it answers                                                                                                      |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `server.log`            | what the app said while all of this happened — copied while the process still holds it open, so the tail may be torn |
-| `capacity.json`         | the raw k6 summary, which the table is read from and another run's can be diffed against                             |
-| `route-log-before.json` | what the app declared it serves, and what the boot poll had already reached                                          |
-| `route-log-after.json`  | the same, after the ramp — the floor's verdict is the difference between the two                                     |
+| File                        | What it answers                                                                                                      |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `replay-from-empty.schema`  | the schema the lineage built on an empty database, one of the two the replay compared                                |
+| `replay-again.schema`       | the second replay's, the other of the two                                                                            |
+| `upgraded-from-base.schema` | the schema the upgrade path reached, where the caller asked for it — [db-upgrade.md](db-upgrade.md)                  |
+| `server.log`                | what the app said while all of this happened — copied while the process still holds it open, so the tail may be torn |
+| `capacity.json`             | the raw k6 summary, which the table is read from and another run's can be diffed against                             |
+| `route-log-before.json`     | what the app declared it serves, and what the boot poll had already reached                                          |
+| `route-log-after.json`      | the same, after the ramp — the floor's verdict is the difference between the two                                     |
+| `database-server.log`       | what the database server said, read just before the job removes it — [db-server.md](db-server.md)                    |
 
 It runs under `always()` rather than `!cancelled()`, and the difference is the
 whole point of having it: the runner marks a job cancelled when it hits its own

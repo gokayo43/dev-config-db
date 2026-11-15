@@ -77,8 +77,10 @@ on:
           the app booted, probed and ramped against the result. It is
           dev-config's own spelling and its own value for exactly this: a
           workflow wrapping theirs runs the database gates in that job's place.
-          `none` is a repo with no schema. `postgres` is refused here rather
-          than served — a Postgres repo calls dev-config directly.
+          `none` is a repo with no schema. `postgres` fails the run: the
+          refusals job refuses it, while the call into dev-config still hands
+          it on, which starts their Postgres database job. A Postgres repo
+          calls dev-config directly.
         type: string
         default: none
       database-image:
@@ -208,8 +210,8 @@ jobs:
   # A job rather than a step, because the only other job that runs on such a
   # call is a `uses:`, and a called workflow takes no steps of a caller's. It
   # runs only when the database job does not: every rule in it but the probe
-  # pair's refuses an input aimed at a job the call leaves off, so with that job
-  # on none of them can fire, and the body does not ask which job runs. A job
+  # pair's can fire only on a call that leaves that job off, so with the job on
+  # none of them can, and the body does not ask which job runs. A job
   # costs a consumer's run about a minute of waiting for a runner (measured on
   # both consumers, 2026-11-15), and the probe pair is refused for those calls
   # by the database job's first step instead.
@@ -304,10 +306,11 @@ jobs:
           changed_from_default database-image "$DATABASE_IMAGE" "$DATABASE_IMAGE_DEFAULT" \
             "it is the server the database job starts, and this call starts none"
 
-          # The one value of dev-config's enum this workflow does not serve. A
+          # The one value of dev-config's enum this workflow does not serve: a
           # repo whose database is Postgres wants their check.yml rather than
-          # this one, and passing it here would hand their Postgres job a repo
-          # that called this workflow for its MySQL-family gates.
+          # this one. The static call above still hands the value on, and so
+          # starts their Postgres database job; this refusal is what fails the
+          # run.
           if [ "$DATABASE" = postgres ]; then
             refuse "database: postgres is not a value this workflow serves — its database job is MariaDB and MySQL 8. A repo whose database is Postgres calls gokayo43/dev-config's check.yml directly."
           fi
