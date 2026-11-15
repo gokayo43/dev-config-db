@@ -195,9 +195,11 @@ because the job's whole timeout goes with nothing said. A probe meaning to leave
 something running behind it will not: that is the trade a bound is.
 
 The step runs when **either** input is set, and a `probe-timeout` with no
-`probe-command` under it is refused twice — once by the wrapper's own guard,
-before any job runs, and once here. A bound on nothing is an input somebody
-wrote that nothing would have read.
+`probe-command` under it is refused here, as this action's own check of its
+inputs. The wrapper refuses the same call earlier: its `refusals` job when the
+database job is off, and the database job's first step when it is on, before
+anything is checked out. A bound on nothing is an input somebody wrote that
+nothing would have read.
 
 ## The ramp
 
