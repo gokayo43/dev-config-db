@@ -62,7 +62,8 @@ that has been improved says so at the line that improved it.
   database gates in that job's place, so one input decides both and this file
   answers for nobody — the `refusals` job, which runs only when the database
   job does not and fails a call asking for a database-job input without the
-  job, and `database`, which is every database gate this repo has — one job, and
+  job, `database: postgres`, or a `probe-timeout` with no `probe-command`, and
+  `database`, which is every database gate this repo has — one job, and
   CONTEXT.md's entry for the term says why there will stay one. Its server is a
   **step** rather than a service container, because the image is the consumer's
   `database-image` input and dev-config's pin gate refuses an expression in

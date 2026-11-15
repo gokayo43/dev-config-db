@@ -7,11 +7,11 @@ import { type Foreign, isList, mapAt, textAt } from "../.github/actions/_lib/for
 import { root, WRAPPER, wrapperDocument } from "./workflow.ts";
 
 /**
- * The one behavioural rule the wrapper itself adds, rather than delegating: a
+ * The refusals the wrapper itself adds, rather than delegating. The main one: a
  * call that asks for an input aimed at the database job without asking for the
  * job is refused instead of ignored. Being quietly ignored is how a gate
  * somebody asked for turns out never to have run, and this is the only place
- * that rule exists.
+ * that rule exists. Beside it, `database: postgres` and the probe pair.
  *
  * The suite runs the shipped `run:` block rather than a transcription of it,
  * the way dev-config's test-suite suite runs its action's. A copy could not
@@ -295,15 +295,15 @@ test("a bound with a probe under it, or neither, passes the database job's first
 /**
  * The one value of dev-config's enum this workflow does not serve, and the only
  * place that rule is stated: handing their `database` on is what makes their
- * vocabulary this workflow's, and `postgres` is where that stops being true — it
- * would hand their Postgres job a repo that called this workflow for its
- * MySQL-family gates, with this repo's own database job left off.
+ * vocabulary this workflow's, and `postgres` is where that stops being true. The
+ * static call still hands it on and starts their Postgres job, so this refusal
+ * is what fails the run.
  *
  * The most plausible wrong implementation is the guard simply not being there:
  * every other case in this file stays green, since none of them passes a value
  * this workflow does not serve.
  */
-test("database: postgres is refused rather than forwarded to a job this workflow leaves off", async () => {
+test("database: postgres is refused, which is what fails the run", async () => {
   const refused = await ran({ DATABASE: "postgres" });
 
   expect(refused.status).toBe(1);
@@ -316,68 +316,23 @@ test("database: postgres is refused rather than forwarded to a job this workflow
 });
 
 /**
- * A GitHub expression of the shape a job's `if:` takes here, evaluated rather
- * than compared as text: `inputs.<name>` or `inputs['<name>']`, a quoted
- * string, `==` and `!=` (which GitHub compares without case), `!`, `&&`, `||`
- * and parentheses. Anything else throws, so an `if:` this cannot read fails the
- * case naming it instead of being read as something it is not.
+ * A job's `if:` evaluated for one call rather than compared as text, in the
+ * one form this workflow writes: `inputs.<name> == '<value>'` or `!=`,
+ * bare or inside `${{ }}`, compared without case as GitHub compares. Anything
+ * else throws, naming the expression, rather than being read as something it
+ * is not.
  */
-function evaluated(expression: string, inputs: Readonly<Record<string, string>>): boolean {
-  const body = /^\s*\$\{\{([\s\S]*)\}\}\s*$/u.exec(expression)?.[1] ?? expression;
-  const tokens =
-    body.match(/inputs\.[\w-]+|inputs\[\s*'[^']*'\s*\]|'[^']*'|==|!=|&&|\|\||!|\(|\)|\S+/gu) ?? [];
-  let at = 0;
-  const unreadable = (): never => {
-    throw new Error(`cannot evaluate \`${expression}\` at token ${at}: ${tokens[at] ?? "the end"}`);
-  };
-  const value = (): string | boolean => {
-    const token = tokens[at++] ?? unreadable();
-    if (token === "(") {
-      const inner = or();
-      if (tokens[at++] !== ")") unreadable();
-      return inner;
-    }
-    if (token === "!") return !truthy(value());
-    const literal = /^'([^']*)'$/u.exec(token);
-    if (literal) return literal[1] ?? "";
-    const input = /^inputs(?:\.([\w-]+)|\[\s*'([^']*)'\s*\])$/u.exec(token);
-    const name = input?.[1] ?? input?.[2];
-    if (name === undefined) return unreadable();
-    return inputs[name] ?? declaredDefault(name);
-  };
-  const compared = (): string | boolean => {
-    const left = value();
-    const operator = tokens[at];
-    if (operator !== "==" && operator !== "!=") return left;
-    at++;
-    const same = String(left).toLowerCase() === String(value()).toLowerCase();
-    return operator === "==" ? same : !same;
-  };
-  const and = (): string | boolean => {
-    let held = compared();
-    while (tokens[at] === "&&") {
-      at++;
-      const right = compared();
-      held = truthy(held) && truthy(right);
-    }
-    return held;
-  };
-  const or = (): string | boolean => {
-    let held = and();
-    while (tokens[at] === "||") {
-      at++;
-      const right = and();
-      held = truthy(held) || truthy(right);
-    }
-    return held;
-  };
-  const result = or();
-  if (at !== tokens.length) unreadable();
-  return truthy(result);
-}
+const CONDITION = /^\s*(?:\$\{\{\s*)?inputs\.([\w-]+)\s*(==|!=)\s*'([^']*)'\s*(?:\}\}\s*)?$/u;
 
-function truthy(value: string | boolean): boolean {
-  return typeof value === "boolean" ? value : value !== "";
+function evaluated(expression: string, inputs: Readonly<Record<string, string>>): boolean {
+  const [, name, operator, literal] = CONDITION.exec(expression) ?? [];
+  if (name === undefined || literal === undefined) {
+    throw new Error(
+      `cannot evaluate \`${expression}\`: it is not inputs.<name> == or != a quoted value`,
+    );
+  }
+  const same = (inputs[name] ?? declaredDefault(name)).toLowerCase() === literal.toLowerCase();
+  return operator === "==" ? same : !same;
 }
 
 /**
