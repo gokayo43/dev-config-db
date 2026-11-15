@@ -77,8 +77,10 @@ on:
           the app booted, probed and ramped against the result. It is
           dev-config's own spelling and its own value for exactly this: a
           workflow wrapping theirs runs the database gates in that job's place.
-          `none` is a repo with no schema. `postgres` is refused here rather
-          than served — a Postgres repo calls dev-config directly.
+          `none` is a repo with no schema. `postgres` fails the run: the
+          refusals job refuses it, while the call into dev-config still hands
+          it on, which starts their Postgres database job. A Postgres repo
+          calls dev-config directly.
         type: string
         default: none
       database-image:
@@ -205,12 +207,16 @@ jobs:
   # never see, and a gate nobody notices is off is the worst kind — so a call
   # that asks for one without asking for the job is refused rather than ignored.
   #
-  # A job rather than a step, because the only other job that always runs here
-  # is a `uses:` and a called workflow takes no steps of a caller's. It has no
-  # `if:` for the reason dev-config's own guard has none: a condition restating
-  # what the body tests is a second statement of one rule, and the half that
-  # gets forgotten is the guard. The body is the rule.
+  # A job rather than a step, because the only other job that runs on such a
+  # call is a `uses:`, and a called workflow takes no steps of a caller's. It
+  # runs only when the database job does not: every rule in it but the probe
+  # pair's can fire only on a call that leaves that job off, so with the job on
+  # none of them can, and the body does not ask which job runs. A job
+  # costs a consumer's run about a minute of waiting for a runner (measured on
+  # both consumers, 2026-11-15), and the probe pair is refused for those calls
+  # by the database job's first step instead.
   refusals:
+    if: inputs.database != 'external'
     # A consumer needs a runner carrying both labels. Without one the job queues
     # and is cancelled 24 hours later, so what a consumer sees is a run that
     # never started rather than one that failed naming the reason — README's
@@ -249,10 +255,6 @@ jobs:
             wrong=1
           }
 
-          # `external` is the value that asks for the database job, so it is
-          # what every rule below compares against — the input is dev-config's
-          # enum rather than a boolean of this workflow's own.
-          #
           # The rule has two shapes and this is the first: an input that
           # defaults to "" was passed iff it is non-empty.
           #
@@ -261,7 +263,7 @@ jobs:
           # returns non-zero, and the step would die on a rule that correctly
           # did not fire.
           needs_job() {
-            if [ "$DATABASE" != external ] && [ -n "$2" ]; then
+            if [ -n "$2" ]; then
               refuse "$1 needs database: external — $3, and this call leaves that job off"
             fi
             return 0
@@ -275,7 +277,7 @@ jobs:
           # over. It is the shape to avoid where a real default can live in the
           # job instead, which is where start-command's and health-url's do.
           changed_from_default() {
-            if [ "$DATABASE" != external ] && [ "$2" != "$3" ]; then
+            if [ "$2" != "$3" ]; then
               refuse "$1 needs database: external — $4, and this call leaves that job off"
             fi
             return 0
@@ -304,18 +306,20 @@ jobs:
           changed_from_default database-image "$DATABASE_IMAGE" "$DATABASE_IMAGE_DEFAULT" \
             "it is the server the database job starts, and this call starts none"
 
-          # The one value of dev-config's enum this workflow does not serve. A
+          # The one value of dev-config's enum this workflow does not serve: a
           # repo whose database is Postgres wants their check.yml rather than
-          # this one, and passing it here would hand their Postgres job a repo
-          # that called this workflow for its MySQL-family gates.
+          # this one. The static call above still hands the value on, and so
+          # starts their Postgres database job; this refusal is what fails the
+          # run.
           if [ "$DATABASE" = postgres ]; then
             refuse "database: postgres is not a value this workflow serves — its database job is MariaDB and MySQL 8. A repo whose database is Postgres calls gokayo43/dev-config's check.yml directly."
           fi
 
-          # Asked whatever the job, because it is a fact about the pair rather
-          # than about the job: a bound with no command under it bounds nothing,
-          # and an input that reaches a step which never reads it is the class
-          # every refusal here exists to kill.
+          # A fact about the pair rather than about the job: a bound with no
+          # command under it bounds nothing, and an input that reaches a step
+          # which never reads it is the class every refusal here exists to
+          # kill. The database job's first step refuses the same pair in the
+          # same words, for the calls this job does not run on.
           if [ -z "$PROBE_COMMAND" ] && [ -n "$PROBE_TIMEOUT" ]; then
             refuse "probe-timeout needs probe-command — it bounds that command, and on its own it bounds nothing"
           fi
@@ -358,6 +362,22 @@ jobs:
           --tmpfs /data:size=64m
 
     steps:
+      # The refusals job's probe-pair rule, for the calls that job skips, and
+      # the first step, so that such a call is refused before anything is
+      # checked out, installed or migrated; the job's Redis service has started
+      # by then. tests/refusals.test.ts holds the two sentences to one text.
+      - name: Refuse a probe bound with no probe
+        env:
+          PROBE_COMMAND: ${{ inputs['probe-command'] }}
+          PROBE_TIMEOUT: ${{ inputs['probe-timeout'] }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$PROBE_COMMAND" ] && [ -n "$PROBE_TIMEOUT" ]; then
+            echo "::error::probe-timeout needs probe-command — it bounds that command, and on its own it bounds nothing"
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The upgrade gate replays the base ref's migrations, which are in the

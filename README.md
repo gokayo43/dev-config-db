@@ -28,9 +28,10 @@ run.
 
 ## Where it runs
 
-Every job in `.github/workflows/check.yml` and in this repo's own `ci.yml`
-declares `runs-on: [self-hosted, linux]`, which is dev-config's own spelling of
-the same thing. **A consumer needs a runner carrying both labels.** Without one
+Every job that runs on a runner of its own declares `runs-on: [self-hosted,
+linux]`: `refusals` and `database` in `.github/workflows/check.yml`, `ramp-script`
+in this repo's own `ci.yml`, and every job of dev-config's `check.yml`, which
+`static` and `ci.yml`'s `check` call. **A consumer needs a runner carrying both labels.** Without one
 its jobs queue and GitHub cancels them 24 hours later, so what a consumer sees
 is a run that never started rather than one that failed naming the reason.
 
@@ -115,8 +116,9 @@ name its tag.
 `external` is dev-config's own value for this arrangement: their database job is
 Postgres, and it says a workflow wrapping theirs runs the database gates in that
 job's place. It is handed straight on, so one input decides both — and
-`database: postgres` is refused here rather than served, since a repo whose
-database is Postgres calls dev-config directly.
+`database: postgres` fails the run: the `refusals` job refuses it, while the
+call into dev-config still hands it on, which starts their Postgres database
+job. A repo whose database is Postgres calls dev-config directly.
 
 A repo whose server is MySQL 8 adds one line, pinned by digest the way it pins
 everything else:
@@ -261,7 +263,15 @@ the value, and [docs/gates/db-upgrade.md](docs/gates/db-upgrade.md) is this
 workflow's answer to it for both products.
 
 Passing any input aimed at this repo's own database job without asking for that
-job is refused rather than ignored, which is what the `refusals` job is for. An
+job is refused rather than ignored, which is what the `refusals` job is for. It
+runs only on a call that leaves the database job off, since that is the only
+call such an input can be misplaced on. A job that starts straight after
+another on the same runner waits about a minute for it (measured on both
+consumers, 2026-11-15), so a job beyond a consumer's number of runners costs its
+run about that. One rule is not about the job: a
+`probe-timeout` with no `probe-command` is refused by the `refusals` job when
+the database job is off, and by the database job's first step when it is on,
+before anything is checked out, in the same words. An
 input that defaults to empty is refused when it is non-empty, since a
 `workflow_call` input cannot be asked whether the caller passed it. Two here
 carry a value instead — `database-image`, so that a consumer running the server
@@ -285,7 +295,7 @@ as a **matrix** gives each leg its own, and keeps it distinct from
 
 | Job                 | What it runs                                                                                                                                                                                                                                                                                                                                                                                                                                            | Status                                                             |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `refusals`          | the one rule this workflow adds rather than delegates: a call asking for an input aimed at a database job, without that job, is refused rather than ignored                                                                                                                                                                                                                                                                                             | shipped                                                            |
+| `refusals`          | on a call that leaves the database job off, the refusals this workflow adds rather than delegates: an input aimed at the database job, `database: postgres`, and a `probe-timeout` with no `probe-command`                                                                                                                                                                                                                                              | shipped                                                            |
 | `static`            | dev-config's `check.yml` with the caller's `database` handed on: the secret scan, the repo contract, the stack denylist, the workflow lint, suppression hygiene, shell scripts, `format:check` / `lint` / `typecheck` / `knip`, the test suite, and — each where the caller asks for it — the compose lint, the duplicate-code gate and the mutation lane                                                                                               | shipped                                                            |
 | `database`          | the server the consumer pinned, started and answering — [docs/gates/db-server.md](docs/gates/db-server.md) — then the repo's `db:migrate` onto an empty database on it, twice, compared as normalized schema dumps — [docs/gates/db-replay.md](docs/gates/db-replay.md) — and then, against that database, the app booted, the repo's own probe run, and a k6 ramp with the route-coverage floor — [docs/gates/db-serving.md](docs/gates/db-serving.md) | shipped                                                            |
 | upgrade path        | a step of `database` where the caller asks for it: the base ref's migrations replayed into a database of the gate's own, this branch's applied on top, and the schema compared with the fresh replay's — [docs/gates/db-upgrade.md](docs/gates/db-upgrade.md)                                                                                                                                                                                           | shipped                                                            |
