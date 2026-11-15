@@ -400,6 +400,8 @@ test("a call starts the refusals job exactly when it leaves the database job off
       .map(([name]) => name)
       .toSorted();
 
+  // A `needs` would put the job behind another's handover, or skip it with it.
+  expect(Object.keys(mapAt(JOBS, "refusals"))).not.toContain("needs");
   expect(started("external")).toEqual(["database", "static"]);
   expect(started("none")).toEqual(["refusals", "static"]);
   expect(started("postgres")).toEqual(["refusals", "static"]);

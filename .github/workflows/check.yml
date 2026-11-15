@@ -360,8 +360,9 @@ jobs:
 
     steps:
       # The refusals job's probe-pair rule, for the calls that job skips, and
-      # first so that such a call is refused before anything is fetched or
-      # booted. tests/refusals.test.ts holds the two sentences to one text.
+      # the first step, so that such a call is refused before anything is
+      # checked out, installed or migrated; the job's Redis service has started
+      # by then. tests/refusals.test.ts holds the two sentences to one text.
       - name: Refuse a probe bound with no probe
         env:
           PROBE_COMMAND: ${{ inputs['probe-command'] }}
