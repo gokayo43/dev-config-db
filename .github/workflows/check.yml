@@ -63,6 +63,9 @@ on:
       data-jobs-external:
         type: string
         default: ""
+      operations-timed-otherwise:
+        type: string
+        default: ""
       test-network:
         type: string
         default: ""
@@ -174,7 +177,7 @@ permissions:
 
 jobs:
   static:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@2022b5fa0e22b5e9dc88791106fad96bdbf9ad1e # v0.74.1
+    uses: gokayo43/dev-config/.github/workflows/check.yml@98aa12a02f1a3fe835db674c827d024d28779e00 # v0.75.1
     with:
       build: ${{ inputs.build }}
       build-cache: ${{ inputs['build-cache'] }}
@@ -189,6 +192,7 @@ jobs:
       contract-exemptions: ${{ inputs['contract-exemptions'] }}
       stack-allowlist: ${{ inputs['stack-allowlist'] }}
       data-jobs-external: ${{ inputs['data-jobs-external'] }}
+      operations-timed-otherwise: ${{ inputs['operations-timed-otherwise'] }}
       test-network: ${{ inputs['test-network'] }}
       test-suite-evidence: ${{ inputs['test-suite-evidence'] }}
       # Handed on rather than answered here, which it was not always: while
@@ -475,7 +479,7 @@ jobs:
       # their host-key lookup is made with, the second is where GitHub publishes
       # those keys, and neither is a fact a consumer of this workflow has an
       # answer to.
-      - uses: gokayo43/dev-config/.github/actions/install@52419a140775218ca44b60c48cb1fae057290ba9 # v0.74.0
+      - uses: gokayo43/dev-config/.github/actions/install@ebba5e24cb069d54fb0b3498560d7297cbb259d9 # v0.75.0
         with:
           git-ssh-key: ${{ secrets['git-ssh-key'] }}
 
@@ -485,7 +489,7 @@ jobs:
       # build has run. Without it such a repo is refused for declaring no
       # migrations, which is a false answer to the question this gate asks.
       - if: inputs.build
-        uses: gokayo43/dev-config/.github/actions/build@52419a140775218ca44b60c48cb1fae057290ba9 # v0.74.0
+        uses: gokayo43/dev-config/.github/actions/build@ebba5e24cb069d54fb0b3498560d7297cbb259d9 # v0.75.0
         with:
           cache: ${{ inputs['build-cache'] }}
 
