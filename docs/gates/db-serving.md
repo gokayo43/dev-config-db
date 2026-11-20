@@ -64,12 +64,12 @@ The step polls a URL to decide whether the app came up, and a 200 off a port
 something else on the machine already holds says nothing about the app — it says
 the runner is shared. Left alone, that is not one wrong verdict: it is a green
 boot and a probe, both run against a stranger while the app under grade never
-ran. A consumer meets this by naming a port of its own in
-`health-url`. One writing `${PORT}` gets a port nothing held when the job
-allocated it, but the job lets go of that port so the app can bind it, and the
-kernel can hand it out again in between
-([dev-config#123](https://github.com/gokayo43/dev-config/issues/123), item 2);
-that collision is rare and fails here, loudly, rather than grading a stranger.
+ran. A consumer hits this when its `health-url` names a fixed port. One writing
+`${PORT}` gets a port nothing held when the job allocated it, but the job lets
+go of that port so the app can bind it, and the kernel can hand it out again in
+between ([dev-config#123](https://github.com/gokayo43/dev-config/issues/123),
+item 2); that collision is rare and fails here, loudly, rather than grading a
+stranger.
 
 A `health-url` that is not an http(s) URL is refused by name rather than polled.
 `localhost:3000/health` parses as a URL — with `localhost:` read as its scheme —
@@ -159,12 +159,12 @@ repo's own program it cannot see, and the failure mode is silence over an app
 that said out loud what was wrong with it.
 
 The command runs as shell — a pipe or an `&&` means what it says — in the
-project the caller declared, with the app's URL in `HEALTH_URL`, the same name
-the boot step uses for it. Its environment is the job's, less the two
-ways of asking for colour and the terminal type they are read off: stdout is the
-protocol here, and a problem arriving wrapped in escape codes is a problem
-nobody can match to a route. Escape sequences are stripped from a line before it
-becomes an annotation anyway, for the probe that colours unconditionally.
+repository's root, with the app's URL in `HEALTH_URL`, the same name the boot
+step uses for it. Its environment is the job's, less the two ways of asking for
+colour and the terminal type they are read off: stdout is the protocol here, and
+a problem arriving wrapped in escape codes is a problem nobody can match to a
+route. Escape sequences are stripped from a line before it becomes an annotation
+anyway, for the probe that colours unconditionally.
 
 Its output is capped at fifty annotations, with a line saying how many there
 were: a probe is one or two contract-level assertions per invariant, and four
@@ -172,11 +172,12 @@ thousand annotations render as neither a list nor a page. The whole output is on
 the log either way.
 
 `probe-timeout` bounds it, in seconds, and empty takes the bound `probe.ts`
-declares — two minutes today — which is where that number and the argument for it
-live. An hour is the most it takes, and that ceiling is arithmetic rather than
-policy: a bound at or above 2147484 seconds overflows the timer it is stored in
-and kills the probe the instant it starts, under a diagnostic saying it ran too
-long.
+declares — two minutes today — which is where that number and the argument for
+it live. An hour is the most it takes. A ceiling exists because a bound at or
+above 2147484 seconds overflows the timer it is stored in and kills the probe
+the instant it starts, under a diagnostic saying it ran too long. The hour is a
+number a person can reason about, below that point and above the job's own
+fifteen minutes.
 
 **The bound takes everything the probe started.** The command runs under
 `setsid`, so its shell is a process-group leader and the kill addresses the
@@ -251,9 +252,8 @@ gets trusted for things it never checked.
 - **Anything about the deployed shape.** One process on a CI runner, against a
   database built ten seconds ago, sharing a machine with the servers this job
   started.
-- **What the app holds under load.** Nothing here sends it more than the boot
-  poll and the probe's own requests. Load is measured by dev-config's
-  `capacity-ramp` command, against a target named when it runs.
+- **What the app holds under load.** This job measures no load. Nothing here
+  sends the app more than the boot poll and the probe's own requests.
 - **A second program in the repo.** The boot covers the program `start-command`
   starts and only that one: another app in the same repo is never started.
 - **A caller who passes `database-image` or `upgrade-gate` as exactly their

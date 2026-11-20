@@ -392,14 +392,14 @@ jobs:
       # rewritten once set. So a migrator that prepended a directory of its own
       # would otherwise decide what `bun` and `docker` mean — the gate's own
       # code never executing, or its dumps taken by something that was never the
-      # server, and the step green in either case. The database is read the same way and one step later, because the
-      # port it is on is docker's answer rather than this file's: the server
-      # step below publishes it and answers with the URL, as an output nothing
-      # afterwards can rewrite. None of the three reaches a value captured
-      # before the graded repo ran. This is the same bar `_lib/annotations.ts`
-      # sets against `::stop-commands::` and `db-replay/database.ts` sets
-      # against a migrator's stdout: what the gate grades is not the graded
-      # repo's to decide.
+      # server, and the step green in either case. The database is read the same
+      # way and one step later, because the port it is on is docker's answer
+      # rather than this file's: the server step below publishes it and answers
+      # with the URL, as an output nothing afterwards can rewrite. None of the
+      # three reaches a value captured before the graded repo ran. This is the
+      # same bar `_lib/annotations.ts` sets against `::stop-commands::` and
+      # `db-replay/database.ts` sets against a migrator's stdout: what the gate
+      # grades is not the graded repo's to decide.
       - id: pinned
         run: |
           {
@@ -637,9 +637,9 @@ jobs:
       # name may be claimed once per run, and two actions publishing under the
       # caller's one name would be the second of them failing on the duplicate.
       #
-      # A step that failed on the way to a number is exactly when its partial
-      # evidence is worth having — the schema a run never got to compare, the
-      # output of an app that never answered.
+      # A step that failed partway is exactly when its partial evidence is worth
+      # having — the schema a run never got to compare, the output of an app
+      # that never answered.
       # Reproducing any of them by re-running with more printing is the shape of
       # debugging every diagnostic here exists to avoid, so the files leave the
       # run whatever happened to it.
@@ -652,12 +652,11 @@ jobs:
       # up, or a probe that wedged, spending the budget and then losing
       # everything it wrote. `always()` is the literal true this needs.
       #
-      # server.log is copied while the app still holds it open, which is not a
-      # race to fix: the probe needs the process alive, so there is no moment
-      # where the file is finished and the run is not. Read its tail as possibly
-      # torn. The boot step's own annotation, not this file, is what says an app
-      # failed to start.
-      - name: Publish what this job built, measured and read
+      # server.log is copied while the app still holds it open: nothing ends the
+      # app before this step, and the runner reaps it at the end of the job.
+      # Read its tail as possibly torn. The boot step's own annotation, not this
+      # file, is what says an app failed to start.
+      - name: Publish what this job built and read
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

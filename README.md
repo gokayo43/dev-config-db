@@ -30,9 +30,10 @@ run.
 
 Every job that runs on a runner of its own declares `runs-on: [self-hosted,
 linux]`: `refusals` and `database` in `.github/workflows/check.yml`, and every
-job of dev-config's `check.yml`, which `static` and `ci.yml`'s `check` call. **A consumer needs a runner carrying both labels.** Without one
-its jobs queue and GitHub cancels them 24 hours later, so what a consumer sees
-is a run that never started rather than one that failed naming the reason.
+job of dev-config's `check.yml`, which `static` and `ci.yml`'s `check` call.
+**A consumer needs a runner carrying both labels.** Without one its jobs queue
+and GitHub cancels them 24 hours later, so what a consumer sees is a run that
+never started rather than one that failed naming the reason.
 
 What such a runner has to provide, beyond those two labels:
 
@@ -251,7 +252,7 @@ forwarded: `semantic-fixtures`, `timestamp-allowlist`, `backfill-seed`,
 `capacity-script` and `capacity-path`. Each is aimed at a step of the Postgres
 database job this workflow leaves off — theirs refuses all nine on a call
 passing `database: external`, so forwarding one would be this workflow sending a
-consumer a refusal from a job they never asked for — and the planned jobs below
+consumer a refusal from a job they never asked for — and the planned steps below
 are where this family answers the ones it needs.
 
 `upgrade-gate` was on that list until dev-config stopped demanding its own
@@ -290,22 +291,23 @@ as a **matrix** gives each leg its own, and keeps it distinct from
 
 ## The jobs
 
-| Job                 | What it runs                                                                                                                                                                                                                                                                                                                                                                                                  | Status                                                             |
+| Job or step         | What it runs                                                                                                                                                                                                                                                                                                                                                                                                  | Status                                                             |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `refusals`          | on a call that leaves the database job off, the refusals this workflow adds rather than delegates: an input aimed at the database job, `database: postgres`, and a `probe-timeout` with no `probe-command`                                                                                                                                                                                                    | shipped                                                            |
 | `static`            | dev-config's `check.yml` with the caller's `database` handed on: the secret scan, the repo contract, the stack denylist, the workflow lint, suppression hygiene, shell scripts, `format:check` / `lint` / `typecheck` / `knip`, the test suite, and — each where the caller asks for it — the compose lint, the duplicate-code gate and the mutation lane                                                     | shipped                                                            |
 | `database`          | the server the consumer pinned, started and answering — [docs/gates/db-server.md](docs/gates/db-server.md) — then the repo's `db:migrate` onto an empty database on it, twice, compared as normalized schema dumps — [docs/gates/db-replay.md](docs/gates/db-replay.md) — and then, against that database, the app booted and the repo's own probe run — [docs/gates/db-serving.md](docs/gates/db-serving.md) | shipped                                                            |
 | upgrade path        | a step of `database` where the caller asks for it: the base ref's migrations replayed into a database of the gate's own, this branch's applied on top, and the schema compared with the fresh replay's — [docs/gates/db-upgrade.md](docs/gates/db-upgrade.md)                                                                                                                                                 | shipped                                                            |
-| backfill            | a backfill run twice, and the rows a deployed database already has graded against this branch's contract                                                                                                                                                                                                                                                                                                      | planned ([#4](https://github.com/gokayo43/dev-config-db/issues/4)) |
+| backfill            | a step of `database`: a backfill run twice, and the rows a deployed database already has graded against this branch's contract                                                                                                                                                                                                                                                                                | planned ([#4](https://github.com/gokayo43/dev-config-db/issues/4)) |
 | DATETIME wall clock | a step of `database`, after the migrations have built the schema: every `DATETIME` column in the database they built carries a reasoned allowlist entry, this family's half of the ambiguous-instant class — [docs/gates/db-datetime.md](docs/gates/db-datetime.md)                                                                                                                                           | shipped                                                            |
-| integration lane    | the repo's DB-touching suite against a real server and Redis, with the junit report read afterwards                                                                                                                                                                                                                                                                                                           | planned ([#6](https://github.com/gokayo43/dev-config-db/issues/6)) |
+| integration lane    | a step of `database`: the repo's DB-touching suite against a real server and Redis, with the junit report read afterwards                                                                                                                                                                                                                                                                                     | planned ([#6](https://github.com/gokayo43/dev-config-db/issues/6)) |
 
 ## Gating this repo
 
 `.github/workflows/ci.yml` calls dev-config's `check.yml` directly rather than
 the workflow beside it: a commit cannot pin its own SHA, so the wrapper would
-gate every review against the dev-config of one commit ago. Both files name one
-dev-config commit, and the suite fails when they stop agreeing.
+gate every review against the dev-config of one commit ago. Both files call
+dev-config's `check.yml` at one commit, and the suite fails when they stop
+agreeing.
 
 ```sh
 bun install
