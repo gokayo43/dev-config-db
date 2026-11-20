@@ -20,9 +20,6 @@ import { materialise } from "./tree.ts";
  * case knows; that it exited at all is asserted every time.
  */
 
-const K6 = join(import.meta.dir, "fake-k6.ts");
-const SUMMARY = join(import.meta.dir, "k6-summary.json");
-
 /** A case per entry point, and the test below fails when the tree grows one this file has not been told about. */
 const CASES = {
   // An account no image creates and an image that is never reached: the step
@@ -93,24 +90,6 @@ const CASES = {
       INPUT_HEALTH_URL: "http://127.0.0.1:65535/health",
     };
   },
-
-  "db-serving/ramp.main.ts": async () => {
-    const project = await materialise({});
-    const plan = join(project, "plan.json");
-    await Bun.write(plan, JSON.stringify({ summary: SUMMARY }));
-    return {
-      INPUT_PROJECT: project,
-      K6,
-      INPUT_CAPACITY_SCRIPT: plan,
-      INPUT_CAPACITY_PATH: "",
-      INPUT_ROUTE_ALLOWLIST: "",
-      INPUT_HEALTH_URL: "http://127.0.0.1:65535/health",
-      INPUT_ROUTE_LOG_BEFORE: join(project, "before.json"),
-      INPUT_ROUTE_LOG_AFTER: join(project, "after.json"),
-      INPUT_SUMMARY_FILE: join(project, "capacity.json"),
-      GITHUB_STEP_SUMMARY: join(project, "summary.md"),
-    };
-  },
 } satisfies Record<string, () => Promise<Readonly<Record<string, string>>>>;
 
 test("every entry point in the tree is run by this lane", async () => {
@@ -150,9 +129,8 @@ test("boot.main.ts exits 0 on the run that leaves the app serving", async () => 
   expect(`hung: ${ran.hung}`).toBe("hung: false");
   expect(ran.status).toBe(0);
   expect(ran.output).toContain("::notice::boot: the app answered");
-  // And the contract the step's own comment states: the probe and the ramp run
-  // against this process in later steps, so it outlives the step that started
-  // it.
+  // And the contract the step's own comment states: the probe runs against
+  // this process in a later step, so it outlives the step that started it.
   const still = await fetch(url, { signal: AbortSignal.timeout(5000) });
   expect(still.ok).toBe(true);
 }, 30_000);

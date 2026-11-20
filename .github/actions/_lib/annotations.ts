@@ -1,8 +1,8 @@
 // oxlint-disable no-console -- stdout is the protocol: GitHub reads ::error and ::notice lines off it
 //
-// What a gate under .github/actions writes to the log, what it publishes to the
-// run summary, and how a step ends — plus the environment a child whose output
-// a gate then reads is given, which is the same protocol seen from the far end.
+// What a gate under .github/actions writes to the log and how a step ends —
+// plus the environment a child whose output a gate then reads is given, which
+// is the same protocol seen from the far end.
 // GitHub checks the whole repository out to run an action, so a gate may import
 // across action directories; only the directory named in `uses:` is the action.
 //
@@ -26,6 +26,8 @@
 //   * `entry` escapes the caught error — see there.
 //   * `publish` relays the log through `relay` rather than printing it — see
 //     there. Upstream prints it raw, which is dev-config#71's second half.
+//   * `Verdict` has no `table`, and `publish` takes no step summary and is
+//     synchronous: no gate here publishes a measurement to the run summary.
 //   * `mask` and `stepOutput` have no upstream counterpart: no gate there answers
 //     its caller with a value, and one here does — the server step, which is
 //     handed a credential and names the port docker gave it. Both are the
@@ -36,17 +38,15 @@ import { appendFile } from "node:fs/promises";
 /**
  * What a gate answers with. `problems` is what fails the step, `log` is the
  * evidence too long to be an annotation — every line two schemas disagree
- * about — `table` is markdown for the run summary, and `note` is the one line a
- * green run leaves behind.
+ * about — and `note` is the one line a green run leaves behind.
  *
- * The four are optional rather than nullable, which under
+ * `note` and `log` are optional rather than nullable, which under
  * `exactOptionalPropertyTypes` is the difference between a field a gate left out
  * and one it filled with nothing.
  */
 export interface Verdict {
   readonly note?: string;
   readonly log?: string;
-  readonly table?: string;
   readonly problems: readonly string[];
 }
 
@@ -145,29 +145,12 @@ export function relay(output: string): void {
  * Every problem is annotated and the step fails once. A gate that exited at the
  * first violation would cost a full CI round-trip per fix, and a bare non-zero
  * exit points at the workflow rather than at what has to change.
- *
- * The table is written for a run the step is about to fail as well. A
- * measurement is what says which way the ramp went wrong, and a summary that
- * appeared only on green runs would be missing from every run that needed one —
- * so it goes out before the annotations, and a gate that published one with
- * nowhere to put it is refused after them rather than before, or the step would
- * die on a wiring fault holding every problem it had just found.
  */
-export async function publish(
-  { log, note, table, problems }: Verdict,
-  into?: string,
-): Promise<void> {
+export function publish({ log, note, problems }: Verdict): void {
   if (log !== undefined && log !== "") relay(log);
   if (note !== undefined && note !== "") console.log(`::notice::${commanded(note)}`);
-  const summary = into === undefined || into === "" ? undefined : into;
-  if (table !== undefined && summary !== undefined) await appendFile(summary, table);
   for (const problem of problems) console.log(`::error::${commanded(problem)}`);
   if (problems.length > 0) process.exitCode = 1;
-  if (table !== undefined && summary === undefined) {
-    throw new Error(
-      "this gate published a table and its caller named no step summary to put it in",
-    );
-  }
 }
 
 /**

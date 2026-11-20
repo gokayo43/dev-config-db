@@ -133,24 +133,6 @@ const AIMED_AT_THE_JOB = [
     "the probe runs against the app the database job boots",
   ],
   [
-    "CAPACITY_SCRIPT",
-    "capacity-script",
-    "scripts/ramp.js",
-    "the ramp runs against the app the database job boots",
-  ],
-  [
-    "CAPACITY_PATH",
-    "capacity-path",
-    "/api/things",
-    "the ramp runs against the app the database job boots",
-  ],
-  [
-    "ROUTE_ALLOWLIST",
-    "route-allowlist",
-    "OPTIONS /* -- the cors plugin answers before a route does",
-    "the route floor is measured across the database job's ramp",
-  ],
-  [
     "UPGRADE_GATE",
     "upgrade-gate",
     "true",

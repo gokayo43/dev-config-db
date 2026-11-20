@@ -55,7 +55,7 @@ await entry(async () => {
     as: container,
     within: WITHIN,
   });
-  await publish(started);
+  publish(started);
 
   // A step OUTPUT rather than $GITHUB_ENV, and that is the whole of why the
   // gates after this one can be trusted to have graded this server: the runner

@@ -6,7 +6,7 @@ import { BOOT_SECONDS, bootGate, healthUrlFrom, startCommandFrom } from "./boot.
 await entry(async () => {
   const read = inputs("start-command", "health-url", "app-log", "project");
 
-  await publish(
+  publish(
     await bootGate({
       // Named rather than inherited: this gate runs in the action's own
       // checkout — action.yml says why — so the project the app starts in is a

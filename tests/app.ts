@@ -1,12 +1,12 @@
 import { join } from "node:path";
 
-import { killGroup, shellGroup } from "../.github/actions/db-serving/group.ts";
+import { killGroup } from "../.github/actions/db-serving/group.ts";
 
 /**
- * The app the boot, probe and ramp suites run against, as a real process on a
- * real port. Nothing here stands in for the app: what those gates assert is
- * what a process does — that it came up, that it answered, that its counters
- * moved — and a stand-in for the process would be grading the stand-in.
+ * The app the boot and probe suites run against, as a real process on a real
+ * port. Nothing here stands in for the app: what those gates assert is what a
+ * process does — that it came up, that it answered — and a stand-in for the
+ * process would be grading the stand-in.
  *
  * `served-app.ts` beside this file is the program; this is how a case starts
  * one and how the run takes it down again.
@@ -16,7 +16,7 @@ import { killGroup, shellGroup } from "../.github/actions/db-serving/group.ts";
 const PROGRAM = join(import.meta.dir, "served-app.ts");
 
 /** What a case asks the app to be. `served-app.ts` says what each one does. */
-export type Mode = "serving" | "dies" | "killed" | "hangs" | "no-instrument" | "html-catch-all";
+export type Mode = "serving" | "dies" | "killed" | "hangs";
 
 const running: string[] = [];
 
@@ -76,31 +76,6 @@ export function pidFileIn(root: string): string {
  */
 export function startCommand(port: number, pidFile: string, mode: Mode = "serving"): string {
   return `APP_MODE=${mode} APP_PID_FILE=${pidFile} bun ${PROGRAM} ${port}`;
-}
-
-/** One app, already answering — for the suites whose subject is what happens after the boot. */
-export async function serving(
-  root: string,
-  mode: Mode = "serving",
-): Promise<{ readonly url: string; readonly pidFile: string }> {
-  const port = await freePort();
-  const pidFile = pidFileIn(root);
-  const url = `http://127.0.0.1:${port}/health`;
-  Bun.spawn(shellGroup(startCommand(port, pidFile, mode)), { stdout: "ignore", stderr: "ignore" });
-  const deadline = Date.now() + 20_000;
-  for (;;) {
-    try {
-      // The health route, which is what the boot step polls — so a case that
-      // goes on to a ramp starts from the state the shipped job starts from:
-      // one count already on that route before the first snapshot is taken.
-      const answered = await fetch(url, { signal: AbortSignal.timeout(1000) });
-      await answered.text();
-      return { url, pidFile };
-    } catch {
-      if (Date.now() > deadline) throw new Error(`the app on ${url} never came up`);
-      await Bun.sleep(100);
-    }
-  }
 }
 
 /**

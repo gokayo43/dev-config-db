@@ -19,14 +19,9 @@
  * below is for.
  */
 
-/** A command as its own process group, so that a kill can address everything it starts. */
-export function asGroup(argv: readonly string[]): string[] {
-  return ["setsid", ...argv];
-}
-
 /** The shell, as its own process group. The command is shell because a pipe or an `&&` means what it says. */
 export function shellGroup(command: string): string[] {
-  return asGroup(["bash", "-c", command]);
+  return ["setsid", "bash", "-c", command];
 }
 
 /**

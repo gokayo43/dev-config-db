@@ -1,20 +1,19 @@
 name: Serving gate
 description: >-
   Boots the calling repo's app against the database the replay step migrated,
-  polls its health route, runs the repo's own probe against it where there is
-  one, and ramps it with the route-coverage floor. Every step reads the app from
-  one place — the health URL — and the database from the environment the calling
-  job owns, so no two of them can disagree about which app or which database
-  they are talking about. docs/gates/db-serving.md is what each step proves and
-  what the three of them together cannot catch.
+  polls its health route, and runs the repo's own probe against it where there
+  is one. Both steps read the app from one place — the health URL — and the
+  database from the environment the calling job owns, so the two cannot
+  disagree about which app or which database they are talking about.
+  docs/gates/db-serving.md is what each step proves and what the two of them
+  together cannot catch.
 
 inputs:
   working-directory:
     description: >-
-      Where the project lives, relative to the checkout. The app starts there,
-      the probe runs there and the ramp measures from there; this gate does not
-      run there, and passes it as an explicit path rather than by being run in
-      it.
+      Where the project lives, relative to the checkout. The app starts there
+      and the probe runs there; this gate does not run there, and passes it as
+      an explicit path rather than by being run in it.
     default: .
   bun:
     description: >-
@@ -26,9 +25,7 @@ inputs:
   path:
     description: >-
       The search path the gates' own tools are found on, from the same reading —
-      `setsid` and `bash` for the processes they start, and `curl`, `sha256sum`
-      and `tar` for the pinned k6 fetch. A checksum is only a contract while the
-      program checking it is the one this job started.
+      `setsid` and `bash` for the processes they start.
     required: true
   start-command:
     description: >-
@@ -45,35 +42,17 @@ inputs:
   probe-command:
     description: >-
       A command of the repo's own, run against the booted app after it answers
-      its health route and before the ramp. Runs as shell code, with the app's
-      URL in HEALTH_URL. Its stdout is the verdict: every line it writes there
-      is one problem, whatever it exits with, since the gate running it cannot
-      know what it was asserting.
+      its health route. Runs as shell code, with the app's URL in HEALTH_URL.
+      Its stdout is the verdict: every line it writes there is one problem,
+      whatever it exits with, since the gate running it cannot know what it was
+      asserting.
     default: ""
   probe-timeout:
     description: >-
       How many seconds probe-command gets before it is killed. Empty takes the
       bound probe.ts declares, which is where the number and the argument for it
       live — a bound is what stops a probe that has wedged from spending the
-      job's whole budget and taking the ramp's evidence with it. Set it with
-      probe-command or not at all.
-    default: ""
-  capacity-script:
-    description: >-
-      A k6 script of the repo's own, resolved against the project above. Empty
-      runs the ramp shipped beside this action.
-    default: ""
-  capacity-path:
-    description: >-
-      Paths to ramp alongside the health route, e.g. /api/things — one per
-      line, since an app serves more than one route and the floor below asks
-      for all of them.
-    default: ""
-  route-allowlist:
-    description: >-
-      Routes the ramp is not expected to reach, as `METHOD /path -- why`
-      entries matching the app's own route table, one per line. The reason is
-      part of the entry, the price a lint directive pays.
+      job's whole budget. Set it with probe-command or not at all.
     default: ""
 
 # The evidence these steps leave in the runner is uploaded by the JOB rather
@@ -117,21 +96,17 @@ runs:
         INPUT_PROJECT: ${{ github.workspace }}/${{ inputs['working-directory'] }}
         SITE_URL: http://localhost
         BETTER_AUTH_SECRET: ci-not-a-secret-ci-not-a-secret-ci
-        # The app serves a counter endpoint naming every route it has and how
-        # many requests each has taken. Set only here: it is an instrument for
-        # the coverage floor, not a surface, and no deployment sets it.
-        ROUTE_LOG: "true"
       run: |
         set -euo pipefail
         # shellcheck source=/dev/null
         . "$GITHUB_ACTION_PATH/../_lib/gate.sh"
         gate boot.main.ts
 
-    # Between the boot and the ramp, which is the only place it can ask what it
-    # asks. Health answering 200 says the app starts against this schema; the
-    # route floor below says every route was reached. Neither says an answer was
-    # correct, and a migration that quietly reinterprets a column passes both —
-    # so the repo gets one command here to assert what only it knows.
+    # After the boot, which is the only place it can ask what it asks. Health
+    # answering 200 says the app starts against this schema, and says nothing
+    # about whether an answer was correct: a migration that quietly
+    # reinterprets a column passes it — so the repo gets one command here to
+    # assert what only it knows.
     #
     # Either input selects it, so that a caller who set only the bound is told
     # so rather than ignored.
@@ -153,49 +128,3 @@ runs:
         # shellcheck source=/dev/null
         . "$GITHUB_ACTION_PATH/../_lib/gate.sh"
         gate probe.main.ts
-
-    # A number, not a latency threshold. On a shared runner a latency bound
-    # measures the runner, and a gate that fails on that is one people turn off.
-    # The step fails when k6 died, when it exported no summary, when it breached
-    # the one bound that is not the runner's — the share of requests the app
-    # refused — when it produced no measurement to record, and when a route the
-    # app serves took nothing from it.
-    #
-    # The floor is this step rather than the next one, and that is the whole
-    # reason there is no next one: it is decided by the two counter snapshots
-    # this step takes, so a ramp the failure bound refuses would otherwise skip
-    # it under `success()` and cost a round-trip per route nothing reached.
-    #
-    # k6.sh is sourced rather than run: it leaves the verified binary at $K6,
-    # which is the one thing this step cannot fetch for itself from inside Bun.
-    - name: Capacity ramp, and every route it reaches
-      shell: bash
-      # The action's own checkout, for the reason the boot step gives — and here
-      # it also decides which `bunfig.toml` k6.sh's own shell would meet. k6
-      # itself is run in the project, by the path this step hands the gate.
-      working-directory: ${{ github.action_path }}
-      env:
-        INPUT_HEALTH_URL: ${{ inputs['health-url'] }}
-        INPUT_CAPACITY_PATH: ${{ inputs['capacity-path'] }}
-        INPUT_CAPACITY_SCRIPT: ${{ inputs['capacity-script'] }}
-        INPUT_ROUTE_ALLOWLIST: ${{ inputs['route-allowlist'] }}
-        INPUT_ROUTE_LOG_BEFORE: ${{ runner.temp }}/route-log-before.json
-        INPUT_ROUTE_LOG_AFTER: ${{ runner.temp }}/route-log-after.json
-        INPUT_SUMMARY_FILE: ${{ runner.temp }}/capacity.json
-        INPUT_BUN: ${{ inputs.bun }}
-        # The fetch below is `curl`, `sha256sum` and `tar`, every one of them
-        # resolved by name: pinning the path is what keeps "the SHA-256 is the
-        # contract" true, since a forged sha256sum prints OK over anything.
-        PATH: ${{ inputs.path }}
-        INPUT_PROJECT: ${{ github.workspace }}/${{ inputs['working-directory'] }}
-      run: |
-        set -euo pipefail
-        # shellcheck source=/dev/null
-        . "$GITHUB_ACTION_PATH/../_lib/gate.sh"
-        # Before the fetch, not after it: k6.sh spends a network round trip, and
-        # a step that spends it and then refuses on a missing input has spent it
-        # for nothing.
-        gate_pinned
-        # shellcheck source=/dev/null
-        . "$GITHUB_ACTION_PATH/k6.sh"
-        gate ramp.main.ts

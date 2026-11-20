@@ -29,9 +29,8 @@ run.
 ## Where it runs
 
 Every job that runs on a runner of its own declares `runs-on: [self-hosted,
-linux]`: `refusals` and `database` in `.github/workflows/check.yml`, `ramp-script`
-in this repo's own `ci.yml`, and every job of dev-config's `check.yml`, which
-`static` and `ci.yml`'s `check` call. **A consumer needs a runner carrying both labels.** Without one
+linux]`: `refusals` and `database` in `.github/workflows/check.yml`, and every
+job of dev-config's `check.yml`, which `static` and `ci.yml`'s `check` call. **A consumer needs a runner carrying both labels.** Without one
 its jobs queue and GitHub cancels them 24 hours later, so what a consumer sees
 is a run that never started rather than one that failed naming the reason.
 
@@ -175,9 +174,6 @@ here**, where it runs against the server that consumer pinned.
 | `health-url`                 | `string`  |
 | `probe-command`              | `string`  |
 | `probe-timeout`              | `string`  |
-| `capacity-script`            | `string`  |
-| `capacity-path`              | `string`  |
-| `route-allowlist`            | `string`  |
 | `datetime-allowlist`         | `string`  |
 
 Every input above `database` is handed to dev-config's `check.yml` unchanged, so
@@ -189,12 +185,11 @@ cannot: that a consumer of this workflow owes `ci-call`.
 
 `database` and every input below it drive this workflow's own job and reach
 dev-config's `check.yml` under no name at all — `database` is the exception
-among them, since it decides a job here AND is handed on. Ten are spelled the
-way dev-config
-spells the same ten, and mean here what they mean there against another server:
-`database` adds the database job below, `upgrade-gate` adds its upgrade step,
-`db-gate-evidence` names the artifact it leaves behind, and the seven after them
-aim its boot, probe and ramp steps —
+among them, since it decides a job here AND is handed on. Seven are spelled the
+way dev-config spells the same seven, and mean here what they mean there
+against another server: `database` adds the database job below, `upgrade-gate`
+adds its upgrade step, `db-gate-evidence` names the artifact it leaves behind,
+and the four after them aim its boot and probe steps —
 [docs/gates/db-serving.md](docs/gates/db-serving.md) is what each one does. A
 consumer that moves between the two workflows writes one call either way, with
 one exception: `health-url` here also takes the `${PORT}` placeholder, and
@@ -252,11 +247,12 @@ this page has stopped accounting for.
 
 Every other input dev-config's `check.yml` declares is refused here rather than
 forwarded: `semantic-fixtures`, `timestamp-allowlist`, `backfill-seed`,
-`backfill-command`, `fuzz-seed` and `route-retire`. Each is aimed at a step of
-the Postgres database job this workflow leaves off — theirs refuses all six on a
-call passing `database: external`, so forwarding one would be this workflow
-sending a consumer a refusal from a job they never asked for — and the jobs below
-are what will answer them for this family.
+`backfill-command`, `fuzz-seed`, `route-retire`, `route-allowlist`,
+`capacity-script` and `capacity-path`. Each is aimed at a step of the Postgres
+database job this workflow leaves off — theirs refuses all nine on a call
+passing `database: external`, so forwarding one would be this workflow sending a
+consumer a refusal from a job they never asked for — and the planned jobs below
+are where this family answers the ones it needs.
 
 `upgrade-gate` was on that list until dev-config stopped demanding its own
 upgrade gate of a caller passing `database: external`: the duty came here with
@@ -294,15 +290,15 @@ as a **matrix** gives each leg its own, and keeps it distinct from
 
 ## The jobs
 
-| Job                 | What it runs                                                                                                                                                                                                                                                                                                                                                                                                                                            | Status                                                             |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `refusals`          | on a call that leaves the database job off, the refusals this workflow adds rather than delegates: an input aimed at the database job, `database: postgres`, and a `probe-timeout` with no `probe-command`                                                                                                                                                                                                                                              | shipped                                                            |
-| `static`            | dev-config's `check.yml` with the caller's `database` handed on: the secret scan, the repo contract, the stack denylist, the workflow lint, suppression hygiene, shell scripts, `format:check` / `lint` / `typecheck` / `knip`, the test suite, and — each where the caller asks for it — the compose lint, the duplicate-code gate and the mutation lane                                                                                               | shipped                                                            |
-| `database`          | the server the consumer pinned, started and answering — [docs/gates/db-server.md](docs/gates/db-server.md) — then the repo's `db:migrate` onto an empty database on it, twice, compared as normalized schema dumps — [docs/gates/db-replay.md](docs/gates/db-replay.md) — and then, against that database, the app booted, the repo's own probe run, and a k6 ramp with the route-coverage floor — [docs/gates/db-serving.md](docs/gates/db-serving.md) | shipped                                                            |
-| upgrade path        | a step of `database` where the caller asks for it: the base ref's migrations replayed into a database of the gate's own, this branch's applied on top, and the schema compared with the fresh replay's — [docs/gates/db-upgrade.md](docs/gates/db-upgrade.md)                                                                                                                                                                                           | shipped                                                            |
-| backfill            | a backfill run twice, and the rows a deployed database already has graded against this branch's contract                                                                                                                                                                                                                                                                                                                                                | planned ([#4](https://github.com/gokayo43/dev-config-db/issues/4)) |
-| DATETIME wall clock | a step of `database`, after the migrations have built the schema: every `DATETIME` column in the database they built carries a reasoned allowlist entry, this family's half of the ambiguous-instant class — [docs/gates/db-datetime.md](docs/gates/db-datetime.md)                                                                                                                                                                                     | shipped                                                            |
-| integration lane    | the repo's DB-touching suite against a real server and Redis, with the junit report read afterwards                                                                                                                                                                                                                                                                                                                                                     | planned ([#6](https://github.com/gokayo43/dev-config-db/issues/6)) |
+| Job                 | What it runs                                                                                                                                                                                                                                                                                                                                                                                                  | Status                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `refusals`          | on a call that leaves the database job off, the refusals this workflow adds rather than delegates: an input aimed at the database job, `database: postgres`, and a `probe-timeout` with no `probe-command`                                                                                                                                                                                                    | shipped                                                            |
+| `static`            | dev-config's `check.yml` with the caller's `database` handed on: the secret scan, the repo contract, the stack denylist, the workflow lint, suppression hygiene, shell scripts, `format:check` / `lint` / `typecheck` / `knip`, the test suite, and — each where the caller asks for it — the compose lint, the duplicate-code gate and the mutation lane                                                     | shipped                                                            |
+| `database`          | the server the consumer pinned, started and answering — [docs/gates/db-server.md](docs/gates/db-server.md) — then the repo's `db:migrate` onto an empty database on it, twice, compared as normalized schema dumps — [docs/gates/db-replay.md](docs/gates/db-replay.md) — and then, against that database, the app booted and the repo's own probe run — [docs/gates/db-serving.md](docs/gates/db-serving.md) | shipped                                                            |
+| upgrade path        | a step of `database` where the caller asks for it: the base ref's migrations replayed into a database of the gate's own, this branch's applied on top, and the schema compared with the fresh replay's — [docs/gates/db-upgrade.md](docs/gates/db-upgrade.md)                                                                                                                                                 | shipped                                                            |
+| backfill            | a backfill run twice, and the rows a deployed database already has graded against this branch's contract                                                                                                                                                                                                                                                                                                      | planned ([#4](https://github.com/gokayo43/dev-config-db/issues/4)) |
+| DATETIME wall clock | a step of `database`, after the migrations have built the schema: every `DATETIME` column in the database they built carries a reasoned allowlist entry, this family's half of the ambiguous-instant class — [docs/gates/db-datetime.md](docs/gates/db-datetime.md)                                                                                                                                           | shipped                                                            |
+| integration lane    | the repo's DB-touching suite against a real server and Redis, with the junit report read afterwards                                                                                                                                                                                                                                                                                                           | planned ([#6](https://github.com/gokayo43/dev-config-db/issues/6)) |
 
 ## Gating this repo
 
@@ -320,17 +316,12 @@ bun test        # needs Docker: the database gates' suites drive real servers
 The suite starts one container per product per worktree — a MariaDB and a MySQL
 8, since every server-touching case runs against both — and takes them down
 again, so `bun test` needs a Docker daemon it can reach. It also starts a real
-app on a real port, which is what the boot, probe and ramp gates are graded
+app on a real port, which is what the boot and probe gates are graded
 against. It is not sealed the way every other repo's suite is: dev-config's
 test-suite gate runs `bun test` in a network namespace holding nothing but its
 own loopback, and a container's published port is on the runner's.
 `test-network` in `ci.yml` is the reason for that, written where it is read in
 review.
-
-Beside that call, `ci.yml` carries one job of its own: the k6 ramp shipped with
-the serving gate, executed under the k6 that gate pins. Nothing in `bun test`
-may fetch a binary, and "it runs inside k6" is not a reason for nothing to have
-run the file.
 
 ## Pins
 

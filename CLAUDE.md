@@ -29,22 +29,14 @@ therefore carry checked-in copies of theirs at the pinned SHA, and each says so
 in its own header with its deltas named: `_lib/annotations.ts` (the writing half
 of their `_lib/gate.ts`), `_lib/foreign.ts` (its narrowing half),
 `_lib/allowlist.ts` (its `-- why` half), the four functions
-`db-replay/database.ts` names (`databaseIn`, `migrate`, `rowsIn`, `textIn`), and what the
-serving gate ports — `db-serving/probe.ts`, `route-coverage.ts`, `capacity.ts`,
-`route-log.ts` and the k6 script `ramp.js` — and the upgrade gate's
+`db-replay/database.ts` names (`databaseIn`, `migrate`, `rowsIn`, `textIn`), the
+serving gate's `db-serving/probe.ts`, and the upgrade gate's
 `db-upgrade/base-lineage.ts` and `db-upgrade/repo.ts`, which are theirs entire
 but for a problem being a string here rather than their `Problem`.
 [dev-config#69](https://github.com/gokayo43/dev-config/issues/69) is where
-ending that is argued.
-
-One of those copies is not blind, and it is the shape the rest could take.
-`route-log.ts` is a protocol both ends of a contract need, so dev-config
-publishes it — it is in their `files` allowlist, and a consuming app imports it.
-A **test** resolves `node_modules` normally even though an action cannot, so
-`tests/route-log.test.ts` holds this repo's copy to dev-config's own module and
-fails when either end drifts. The other copies have no published original to be
-held to; `.github/` reaches this repo's install only because a `github:`
-dependency is a full checkout.
+ending that is argued. None of these copies has a published original to be held
+to; `.github/` reaches this repo's install only because a `github:` dependency
+is a full checkout.
 
 The carve-out is for what the runtime makes unreachable, and nothing else. It is
 not licence to fork a gate: an assertion, a diagnostic or a rule that could live
@@ -93,14 +85,13 @@ that has been improved says so at the line that improved it.
   database job: `db-server` (the server the rest of them grade), `db-replay`
   (`#2`), `db-upgrade` (the upgrade path, which dev-config leaves to a wrapper
   passing `database: external`), `db-datetime` (`#5`) and `db-serving` (`#3`,
-  the boot, probe and ramp). Each splits what talks to something from
+  the boot and the probe). Each splits what talks to something from
   what is pure, so that a verdict can be driven without the thing under it —
-  `db-replay/database.ts` and `db-replay/schema.ts`, `db-serving/ramp.ts` and
-  `db-serving/capacity.ts`; `db-datetime` reads its catalogue through the first
+  `db-replay/database.ts` and `db-replay/schema.ts`; `db-datetime` reads its catalogue through the first
   of those and opens no connection of its own, and `db-upgrade` splits the same
   way — `base-lineage.ts` and `repo.ts` are git and files, `upgrade.ts` is the
   verdict. `_lib/` is what every action
-  shares: `annotations.ts` (the log protocol and the run summary), `foreign.ts`
+  shares: `annotations.ts` (the log protocol and how a step ends), `foreign.ts`
   (the one place a document nobody here wrote is narrowed), `allowlist.ts` (how
   an allowlist input is read, what a reason costs, and what a dead entry costs)
   and `gate.sh` (how every gate step starts its own program).
@@ -144,8 +135,9 @@ that has been improved says so at the line that improved it.
   in two places in one sentence, the `refusals` body and the database job's
   first step, and the suite holds the two lines equal.
   `serving-job.test.ts` grades the wiring no gate can see from inside: which
-  steps the job runs, what the app is given, whether every file a step leaves in
-  the runner is actually uploaded, and that every step declares the pins above.
+  steps the job runs, what the serving gate is handed, whether every file a step
+  leaves in the runner is actually uploaded, that every step declares the pins
+  above, and that no workflow or action of this repo runs a load test.
   `app-port.test.ts` runs the job's own step that allocates the app's port: it
   runs the pinned interpreter rather than a `bun` on PATH, the app and every
   gate are handed one port, each `${PORT}` in a caller's
@@ -172,12 +164,6 @@ that has been improved says so at the line that improved it.
   real port — which is why `ci.yml` sets `test-network`. Every case that touches
   a server runs against both products; the two that cannot are marked where they
   stand, and each is the dialect rather than the gate.
-
-  The one thing the suite cannot run has a job of its own in `ci.yml`: nothing
-  in `bun test` may fetch a binary, so the shipped k6 ramp is executed by
-  `tests/ramp-script.ts` under the pinned k6 that `k6.sh` fetches. "It runs
-  inside k6" is why the linter and knip skip that script, and it is not a reason
-  for nothing to have run it.
 
 ## The servers this repo serves
 
