@@ -249,11 +249,10 @@ export async function probeGate({ root, command, url, timeout }: Probe): Promise
       // holds the write end of these pipes, and a pending read on them keeps
       // Bun's event loop alive: this gate published a correct verdict and then
       // sat on a process that never exited — a step that hangs until the job's
-      // timeout. So the grace is a bound this function can cancel (not
-      // unref'd: it is what holds the loop until it is decided), and when it
-      // fires the reads are
-      // put down. What the probe writes after the kill is lost, which the
-      // annotation says.
+      // timeout. So the grace is a bound this function can cancel (not unref'd:
+      // it is what holds the loop until it is decided), and when it fires the
+      // reads are put down. What the probe writes after the kill is lost, which
+      // the annotation says.
       let grace: ReturnType<typeof setTimeout> | undefined;
       const salvaged = await Promise.race([
         collected,

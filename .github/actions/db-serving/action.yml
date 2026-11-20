@@ -30,14 +30,14 @@ inputs:
   start-command:
     description: >-
       How to start the app, as shell code. Required, and deliberately without a
-      default: the workflow that calls this declares dev-config's default so
+      default: the workflow that calls this applies dev-config's default so
       that a consumer writes one call either way, and a default here as well
       would be a second answer to the same question.
     required: true
   health-url:
     description: >-
-      What the boot step polls until it answers 200, and the address every step
-      after it takes the app from. Required, for the reason start-command is.
+      What the boot step polls until it answers 200, and the address the probe
+      step takes the app from. Required, for the reason start-command is.
     required: true
   probe-command:
     description: >-

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,8 +9,8 @@ import { root, stringsIn, WRAPPER, wrapperDocument } from "./workflow.ts";
 
 /**
  * The wiring the gates themselves cannot see: which steps the shipped job runs,
- * what the app is given, and whether the evidence every one of them leaves
- * behind is actually uploaded.
+ * and whether the evidence every one of them leaves behind is actually
+ * uploaded.
  *
  * Each of these is a way for a green run to mean nothing: a file written into
  * the runner and left out of the upload is evidence deleted with the runner,
@@ -96,35 +96,34 @@ test("every file the gates leave in the runner is in the artifact the job upload
   expect(written).toHaveLength(5);
   expect(written.filter((file) => !path.includes(file))).toEqual([]);
 
-  // The run that failed on the way to a number is exactly the run whose partial
-  // evidence is worth having — and `!cancelled()` is not that condition: the
-  // runner marks the job cancelled when it hits its own `timeout-minutes`, so
-  // the step was skipped on exactly the runs that had spent fifteen minutes
-  // producing the evidence. This assertion used to hold the hole in place.
+  // The run that failed partway is exactly the run whose partial evidence is
+  // worth having — and `!cancelled()` is not that condition: the runner marks
+  // the job cancelled when it hits its own `timeout-minutes`, so the step was
+  // skipped on exactly the runs that had spent fifteen minutes producing the
+  // evidence. This assertion used to hold the hole in place.
   expect(textAt(upload, "if")).toBe("${{ always() }}");
   expect(textAt(mapAt(upload, "with"), "if-no-files-found")).toBe("ignore");
 });
 
 /**
- * A load test is dev-config's `capacity-ramp` command, run against a target its
- * runner names, and never a step of CI. Every workflow and every file an action
- * ships is read, because a k6 run can enter through either: a step of a
- * workflow, or a script or loader beside an action it calls.
+ * No step of CI runs a load test. Every file under the workflows and the
+ * actions is read, whatever its extension, because a load test can enter as a
+ * step of a workflow or as a script or loader beside an action it calls, and a
+ * file there that names either word has no reason to.
  */
-test("no workflow and no action of this repo runs k6", async () => {
-  const shipped = [
-    ...(await readdir(join(root, ".github/workflows"))).map((file) => `.github/workflows/${file}`),
-    ...(await readdir(join(root, ".github/actions"), { recursive: true })).map(
-      (file) => `.github/actions/${file}`,
-    ),
-  ];
-  const files = shipped.filter((file) => /\.(?:ya?ml|ts|js|sh)$/u.test(file));
+test("no workflow and no action of this repo runs a load test", async () => {
+  const files = await Array.fromAsync(
+    new Bun.Glob("{workflows,actions}/**/*").scan({ cwd: join(root, ".github"), dot: true }),
+    (file) => `.github/${file}`,
+  );
   expect(files).toContain(WRAPPER);
   expect(files).toContain(".github/actions/db-serving/action.yml");
 
   const mentioning: string[] = [];
   for (const file of files) {
-    if (/\bk6\b/iu.test(await Bun.file(join(root, file)).text())) mentioning.push(file);
+    if (/\b(?:k6|capacity-ramp)\b/iu.test(await Bun.file(join(root, file)).text())) {
+      mentioning.push(file);
+    }
   }
   expect(mentioning).toEqual([]);
 });

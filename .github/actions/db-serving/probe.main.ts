@@ -13,9 +13,10 @@ await entry(async () => {
       // command, run in the repo's own project.
       root: resolve(read["project"]),
       command: read["probe-command"],
-      // The same URL the boot step polled, from the same input. A second way of naming the app would be a second thing to get
-      // wrong about which app the probe was talking to — and the boot step has
-      // already refused a value that is not one.
+      // The same URL the boot step polled, from the same input. A second way
+      // of naming the app would be a second thing to get wrong about which app
+      // the probe was talking to — and the boot step has already refused a
+      // value that is not one.
       url: read["health-url"],
       // Unparsed: the gate reads the bound out of it, and needs to be able to
       // tell "no bound named" from the number that stands in for one.

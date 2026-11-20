@@ -31,8 +31,7 @@ export const REASON = " -- ";
  * quoted SQL identifier, and the reason it carries. The reason is prose, prose
  * contains commas, and an entry that ended at one would be graded as two: a
  * subject stripped of the reason written for it, and half a sentence read as a
- * subject nobody wrote. Two diagnostics,
- * both true of an input nobody typed.
+ * subject nobody wrote. Two diagnostics, both true of an input nobody typed.
  */
 function entriesIn(value: string): string[] {
   return value

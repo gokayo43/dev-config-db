@@ -85,16 +85,16 @@ that has been improved says so at the line that improved it.
   database job: `db-server` (the server the rest of them grade), `db-replay`
   (`#2`), `db-upgrade` (the upgrade path, which dev-config leaves to a wrapper
   passing `database: external`), `db-datetime` (`#5`) and `db-serving` (`#3`,
-  the boot and the probe). Each splits what talks to something from
-  what is pure, so that a verdict can be driven without the thing under it —
-  `db-replay/database.ts` and `db-replay/schema.ts`; `db-datetime` reads its catalogue through the first
-  of those and opens no connection of its own, and `db-upgrade` splits the same
-  way — `base-lineage.ts` and `repo.ts` are git and files, `upgrade.ts` is the
-  verdict. `_lib/` is what every action
-  shares: `annotations.ts` (the log protocol and how a step ends), `foreign.ts`
-  (the one place a document nobody here wrote is narrowed), `allowlist.ts` (how
-  an allowlist input is read, what a reason costs, and what a dead entry costs)
-  and `gate.sh` (how every gate step starts its own program).
+  the boot and the probe). Each splits what talks to something from what is
+  pure, so that a verdict can be driven without the thing under it —
+  `db-replay/database.ts` and `db-replay/schema.ts`; `db-datetime` reads its
+  catalogue through the first of those and opens no connection of its own, and
+  `db-upgrade` splits the same way — `base-lineage.ts` and `repo.ts` are git and
+  files, `upgrade.ts` is the verdict. `_lib/` is what every action shares:
+  `annotations.ts` (the log protocol and how a step ends), `foreign.ts` (the one
+  place a document nobody here wrote is narrowed), `allowlist.ts` (how an
+  allowlist input is read, what a reason costs, and what a dead entry costs) and
+  `gate.sh` (how every gate step starts its own program).
 - **A gate step takes nothing from the repository it grades.** It runs in the
   action's own checkout — `bun` reads a `bunfig.toml` `preload` from its working
   directory, and a graded repo's is not the gate's to run — under an interpreter

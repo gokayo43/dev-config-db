@@ -74,8 +74,8 @@ move. A shop that opens at 09:00 wherever it is has a wall-clock reading and not
 an instant, and that is the only thing `datetime-allowlist` waives.
 
 **The app** — the one program `start-command` starts and `health-url` answers
-on. Every step after the replay means this program and no other: the boot polls
-it and the probe talks to it. A repo with a second program in it — a web app
+on. The boot and the probe mean this program and no other: the boot polls it
+and the probe talks to it. A repo with a second program in it — a web app
 beside an API — has routes this gate never sees, because only the booted one is
 started.
 
