@@ -20,10 +20,7 @@
  *     repo's gates raise is about a database rather than about a line of the
  *     tree, and `file=`/`line=` on an annotation pointing at nothing is dropped
  *     by GitHub in silence.
- *   * the lists are `readonly`. Nothing here mutates one, and the two gates
- *     reading them — the DATETIME allowlist and the route floor — differ in
- *     what an entry IS, which is exactly the reason neither may edit the other's
- *     copy of it.
+ *   * the lists are `readonly`, since nothing here mutates one.
  */
 
 /** The separator oxlint uses between a suppression and its reason, and every allowlist here follows it. */
@@ -31,10 +28,10 @@ export const REASON = " -- ";
 
 /**
  * One entry per line — not space-separated, because an entry contains spaces: a
- * quoted SQL identifier, the method and path of a route, and the reason each of
- * them carries. The reason is prose, prose contains commas, and an entry that
- * ended at one would be graded as two: a subject stripped of the reason written
- * for it, and half a sentence read as a subject nobody wrote. Two diagnostics,
+ * quoted SQL identifier, and the reason it carries. The reason is prose, prose
+ * contains commas, and an entry that ended at one would be graded as two: a
+ * subject stripped of the reason written for it, and half a sentence read as a
+ * subject nobody wrote. Two diagnostics,
  * both true of an input nobody typed.
  */
 function entriesIn(value: string): string[] {
@@ -94,11 +91,7 @@ export function allowlistFrom(value: string, input: string): Allowlist {
  * The waivers standing for nobody, and which of the two ways each got there.
  *
  * The DATETIME gate is what this serves: its entries ARE the subjects it
- * grades, so they can be subtracted from a set of them. The route floor's are
- * not — an entry there is parsed into a method and a path first, and `options
- * /*` and `OPTIONS /*` are one route rather than two spellings — so it
- * classifies its own in `route-coverage.ts`, which is where the parse that
- * makes it different lives.
+ * grades, so they can be subtracted from a set of them.
  *
  * `live` is what the gate still grades: a subject in it is a waiver doing its
  * job. `known` is everything the gate can see at all, and the difference

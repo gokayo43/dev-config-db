@@ -102,9 +102,7 @@ test("a bun the graded repo put on PATH cannot replace the probe step's interpre
 /**
  * `required: true` on a composite action's input is a promise nothing enforces:
  * a caller who omits one gets the empty string, and an empty interpreter is a
- * `command not found` naming nothing. Both pins are refused by name instead —
- * and the ramp asks before it spends a network round trip fetching k6, which is
- * why this case can be run at all without one.
+ * `command not found` naming nothing. Both pins are refused by name instead.
  */
 test("a step refuses to run without the interpreter its caller pins", async () => {
   const ran = await ranStep("db-serving", "Boot", {
@@ -116,17 +114,9 @@ test("a step refuses to run without the interpreter its caller pins", async () =
   expect(ran.status).toBe(1);
 });
 
-test("the ramp refuses an empty search path before it fetches anything", async () => {
-  const ran = await ranStep("db-serving", "Capacity ramp", {
-    inputs: {
-      "working-directory": ".",
-      "health-url": "http://127.0.0.1:65535/health",
-      "capacity-path": "",
-      "capacity-script": "",
-      "route-allowlist": "",
-      bun: process.execPath,
-      path: "",
-    },
+test("a step refuses to run without the search path its caller pins", async () => {
+  const ran = await ranStep("db-serving", "Boot", {
+    inputs: { ...BOOT, path: "" },
     workspace: await checkout(),
   });
 

@@ -46,8 +46,8 @@ function commands(lines: readonly string[]): string[] {
 }
 
 test("a newline in a problem cannot end the annotation and start a second command", async () => {
-  const lines = await written(async () => {
-    await publish({ problems: ["could not read `t`\n::stop-commands::deadbeef"] });
+  const lines = await written(() => {
+    publish({ problems: ["could not read `t`\n::stop-commands::deadbeef"] });
   });
 
   expect(lines).toEqual(["::error::could not read `t`%0A::stop-commands::deadbeef"]);
@@ -55,16 +55,16 @@ test("a newline in a problem cannot end the annotation and start a second comman
 });
 
 test("a carriage return and a percent are escaped the way GitHub decodes them", async () => {
-  const lines = await written(async () => {
-    await publish({ note: "100% done\rand back", problems: [] });
+  const lines = await written(() => {
+    publish({ note: "100% done\rand back", problems: [] });
   });
 
   expect(lines).toEqual(["::notice::100%25 done%0Dand back"]);
 });
 
 test("percent is escaped first, so an introduced escape is not escaped again", async () => {
-  const lines = await written(async () => {
-    await publish({ problems: ["a%0Ab\nc"] });
+  const lines = await written(() => {
+    publish({ problems: ["a%0Ab\nc"] });
   });
 
   // The literal `%0A` the message carried survives as `%250A`; the real newline
@@ -80,8 +80,8 @@ test("percent is escaped first, so an introduced escape is not escaped again", a
  * is exactly what the runner trims before it matches.
  */
 test("a dump line that is a workflow command reaches the log as text", async () => {
-  const lines = await written(async () => {
-    await publish({
+  const lines = await written(() => {
+    publish({
       log: "the schema after a second replay, from line 2:\n  ::stop-commands::deadbeef",
       problems: ["replaying changed the schema"],
     });
@@ -144,8 +144,8 @@ test("a percent in relayed output is left alone", async () => {
 });
 
 test("the log goes out before the annotation that summarises it", async () => {
-  const lines = await written(async () => {
-    await publish({ log: "evidence", note: "a note", problems: ["a problem"] });
+  const lines = await written(() => {
+    publish({ log: "evidence", note: "a note", problems: ["a problem"] });
   });
 
   expect(lines).toEqual(["| evidence", "::notice::a note", "::error::a problem"]);
@@ -153,61 +153,14 @@ test("the log goes out before the annotation that summarises it", async () => {
 
 test("a verdict with no problems leaves the step green", async () => {
   const before = process.exitCode;
-  await written(async () => await publish({ note: "all well", problems: [] }));
+  await written(() => publish({ note: "all well", problems: [] }));
   expect(process.exitCode).toBe(before);
 });
 
 test("every problem is annotated rather than only the first", async () => {
-  const lines = await written(async () => await publish({ problems: ["one", "two", "three"] }));
+  const lines = await written(() => publish({ problems: ["one", "two", "three"] }));
   expect(commands(lines)).toHaveLength(3);
   process.exitCode = 0;
-});
-
-/**
- * The run summary, which is where a measurement goes: an annotation is one line
- * on a step and a table is what a reader compares with the last run's. The two
- * cases are the whole of the contract — it is written for a run about to fail,
- * and a gate that builds one with nowhere to put it is a wiring fault rather
- * than a run.
- */
-test("a table is published before the annotations, including on the run that fails", async () => {
-  const into = join(tmpdir(), `summary-${Bun.randomUUIDv7()}.md`);
-  try {
-    const lines = await written(
-      async () =>
-        await publish({ table: "### Capacity\n", problems: ["half the requests failed"] }, into),
-    );
-
-    // A summary that appeared only on green runs would be missing from every
-    // run that needed one.
-    expect(await Bun.file(into).text()).toBe("### Capacity\n");
-    expect(commands(lines)).toEqual(["::error::half the requests failed"]);
-  } finally {
-    await rm(into, { force: true });
-    process.exitCode = 0;
-  }
-});
-
-test("a table with nowhere to go is a wiring fault, raised after what it found", async () => {
-  const lines: string[] = [];
-  const log: typeof console.log = console.log.bind(console);
-  console.log = (...parts: unknown[]) => void lines.push(parts.map(String).join(" "));
-  let refused: unknown;
-  try {
-    await publish({ table: "### Capacity\n", problems: ["a problem"] });
-  } catch (thrown) {
-    refused = thrown;
-  } finally {
-    console.log = log;
-    process.exitCode = 0;
-  }
-  expect(String(refused)).toContain("named no step summary");
-
-  // Raised after the annotations rather than before them: a step that died on
-  // the way to writing a table would otherwise lose every problem it had just
-  // found, and the failure would reach the log as a stack trace about a file
-  // path.
-  expect(commands(lines)).toEqual(["::error::a problem"]);
 });
 
 /**

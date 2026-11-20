@@ -36,8 +36,8 @@ import { killGroup, shellGroup } from "./group.ts";
 /**
  * How long the app gets to answer. dev-config's number, and the argument is
  * theirs: a boot that has wedged is otherwise indistinguishable from a slow one
- * and would spend the job's whole budget saying so, taking the probe, the ramp
- * and every piece of evidence after it down with it.
+ * and would spend the job's whole budget saying so, taking the probe after it
+ * down with it.
  */
 export const BOOT_SECONDS = 60;
 
@@ -83,10 +83,9 @@ export function startCommandFrom(value: string): string {
 }
 
 /**
- * The URL, refused rather than polled when it is not one. Every step after this
- * takes the app from here — the probe under `HEALTH_URL`, the ramp and the
- * route log from its origin — so a value nothing can parse is refused once,
- * here, rather than three times in three vocabularies.
+ * The URL, refused rather than polled when it is not one. The probe takes the
+ * app from here too, under `HEALTH_URL`, so a value nothing can parse is
+ * refused once, here, rather than twice in two vocabularies.
  */
 export function healthUrlFrom(value: string): string {
   if (value.trim() === "") {
@@ -163,8 +162,8 @@ export async function bootGate({ root, command, url, log, seconds }: Boot): Prom
   // 200 belongs to something this step did not start, and the poll below cannot
   // tell that from the app coming up. On a fresh cloud VM there was nothing
   // else on the box; on a shared, persistent runner there is — and the cost of
-  // missing it is not one wrong verdict but a green boot, a probe and twenty
-  // ramp VUs all run against a stranger while the app under grade never ran.
+  // missing it is not one wrong verdict but a green boot and a probe both run
+  // against a stranger while the app under grade never ran.
   //
   // Refused rather than waited out, because nothing about it improves with
   // time. The database job allocates the port it polls, so a consumer that
@@ -178,9 +177,9 @@ export async function bootGate({ root, command, url, log, seconds }: Boot): Prom
     };
   }
 
-  // Opened rather than piped: the app outlives this process — the probe and the
-  // ramp run against it in later steps — so nothing here can be holding the
-  // read end of its output.
+  // Opened rather than piped: the app outlives this process — the probe runs
+  // against it in a later step — so nothing here can be holding the read end
+  // of its output.
   const output = openSync(log, "w");
   const app = Bun.spawn(shellGroup(command), {
     cwd: root,
@@ -195,11 +194,10 @@ export async function bootGate({ root, command, url, log, seconds }: Boot): Prom
   // A subprocess keeps Bun's event loop alive for as long as it runs, and the
   // app here is meant to outlive this step by design — so a gate that published
   // a perfect verdict would then sit on a process that never exits, the step
-  // would hang until the job's timeout, and the probe and the ramp would never
-  // run. Only a FAILING boot ended, because killing the app is what happened to
-  // drop that reference. Unref'd, the loop is held by this gate's own poll and
-  // nothing else, and the app is left running exactly as the contract above
-  // says.
+  // would hang until the job's timeout, and the probe would never run. Only a
+  // FAILING boot ended, because killing the app is what happened to drop that
+  // reference. Unref'd, the loop is held by this gate's own poll and nothing
+  // else, and the app is left running exactly as the contract above says.
   //
   // The descriptor is the child's from the moment it is spawned — it holds a
   // dup — so this one is ours to close, and closing it is what stops one
@@ -219,8 +217,8 @@ export async function bootGate({ root, command, url, log, seconds }: Boot): Prom
     // step's verdict only when the app this step started is alive to have
     // served it. The health URL is a port on a machine other things also listen
     // on, so on a shared, persistent runner a stranger already on it turns a
-    // start-command that died into a green boot — and the probe and twenty ramp
-    // VUs are then aimed at the stranger while the app under grade never ran.
+    // start-command that died into a green boot — and the probe is then aimed
+    // at the stranger while the app under grade never ran.
     //
     // What this narrows: an app that answers and dies in the microseconds
     // before the line below is read is reported as having exited rather than as

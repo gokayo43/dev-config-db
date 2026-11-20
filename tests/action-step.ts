@@ -24,7 +24,7 @@ import { root } from "./workflow.ts";
  * opposite of the property wanted.
  *
  * Both suites that drive shipped steps come through here: `action-steps.test.ts`
- * for the replay and DATETIME gates, `serving-steps.test.ts` for the three the
+ * for the replay and DATETIME gates, `serving-steps.test.ts` for the two the
  * serving gate ships.
  */
 

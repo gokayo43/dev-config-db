@@ -14,7 +14,5 @@ await entry(async () => {
     "this gate reads the catalogue of the database the replay built",
   );
 
-  await publish(
-    await datetimeGate(url, allowlistFrom(read["datetime-allowlist"], "datetime-allowlist")),
-  );
+  publish(await datetimeGate(url, allowlistFrom(read["datetime-allowlist"], "datetime-allowlist")));
 });

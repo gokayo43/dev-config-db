@@ -38,8 +38,8 @@ inputs:
 # imports spawn nothing, and its run block is shell builtins — so the search
 # path is nobody's to hijack here, and an input the step never read would be
 # dead config a reader would later "fix". The steps that DO resolve a name take
-# it: db-server and db-replay for `docker`, db-serving for `setsid`, `bash` and
-# the k6 fetch's `curl`, `sha256sum` and `tar`. `_lib/gate.sh` is where the rule is written.
+# it: db-server and db-replay for `docker`, db-serving for `setsid` and `bash`.
+# `_lib/gate.sh` is where the rule is written.
 runs:
   using: composite
   steps:

@@ -6,15 +6,14 @@ import { probeGate } from "./probe.ts";
 await entry(async () => {
   const read = inputs("probe-command", "probe-timeout", "health-url", "project");
 
-  await publish(
+  publish(
     await probeGate({
       // Named rather than inherited, for the reason action.yml gives: the gate
       // runs in the action's own checkout, and the probe is the repo's own
       // command, run in the repo's own project.
       root: resolve(read["project"]),
       command: read["probe-command"],
-      // The same URL the boot step polled and the ramp measures, from the same
-      // input. A second way of naming the app would be a second thing to get
+      // The same URL the boot step polled, from the same input. A second way of naming the app would be a second thing to get
       // wrong about which app the probe was talking to — and the boot step has
       // already refused a value that is not one.
       url: read["health-url"],
