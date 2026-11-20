@@ -135,8 +135,9 @@ that has been improved says so at the line that improved it.
   in two places in one sentence, the `refusals` body and the database job's
   first step, and the suite holds the two lines equal.
   `serving-job.test.ts` grades the wiring no gate can see from inside: which
-  steps the job runs, what the app is given, whether every file a step leaves in
-  the runner is actually uploaded, and that every step declares the pins above.
+  steps the job runs, what the serving gate is handed, whether every file a step
+  leaves in the runner is actually uploaded, that every step declares the pins
+  above, and that no workflow or action of this repo runs a load test.
   `app-port.test.ts` runs the job's own step that allocates the app's port: it
   runs the pinned interpreter rather than a `bun` on PATH, the app and every
   gate are handed one port, each `${PORT}` in a caller's
