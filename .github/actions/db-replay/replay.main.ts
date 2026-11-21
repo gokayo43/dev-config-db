@@ -11,7 +11,7 @@ await entry(async () => {
   // why it is an input there rather than whatever the environment now holds.
   const url = required("DATABASE_URL", "the calling job must set it for the database it declared");
 
-  await publish(
+  publish(
     await replayGate({
       // Named rather than inherited: this gate runs in the action's own
       // checkout, so the project is a path it is handed. Resolved because the

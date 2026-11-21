@@ -9,14 +9,13 @@ import { root, stringsIn, WRAPPER, wrapperDocument } from "./workflow.ts";
 
 /**
  * The wiring the gates themselves cannot see: which steps the shipped job runs,
- * what the app is given, and whether the evidence every one of them leaves
- * behind is actually uploaded.
+ * and whether the evidence every one of them leaves behind is actually
+ * uploaded.
  *
- * Each of these is a way for a green run to mean nothing. An app booted without
- * `ROUTE_LOG` serves no instrument, so the floor grades a payload that never
- * comes; a file written into the runner and left out of the upload is evidence
- * deleted with the runner; a ramp step that stopped sourcing the pinned fetch
- * runs whatever k6 the machine happens to have.
+ * Each of these is a way for a green run to mean nothing: a file written into
+ * the runner and left out of the upload is evidence deleted with the runner,
+ * and a step that resolves a program through a path the graded repo wrote runs
+ * that repo's program instead of the gate.
  */
 
 /**
@@ -71,13 +70,6 @@ function jobSteps(): Foreign[] {
   return (isList(steps) ? steps : []).filter((step) => isForeign(step));
 }
 
-/** The step that ramps, which is also the step that grades the floor — see below. */
-function rampStep(): Foreign {
-  const found = stepsOf(serving).find((step) => (textAt(step, "name") ?? "").includes("ramp"));
-  if (found === undefined) throw new Error("db-serving has no ramp step");
-  return found;
-}
-
 function stepUsing(what: string): Foreign {
   const found = jobSteps().find((step) => (textAt(step, "uses") ?? "").includes(what));
   if (found === undefined) throw new Error(`${WRAPPER}'s database job has no step using ${what}`);
@@ -98,27 +90,42 @@ test("every file the gates leave in the runner is in the artifact the job upload
     ...runnerFiles(job),
   ];
   // The two schemas the replay compared, the schema the upgrade path reached,
-  // the app's own output, the k6 summary, both route-log snapshots and the
-  // database server's own output: eight files, and the whole reason the upload
-  // belongs to the job rather than to any one action.
-  expect(written).toHaveLength(8);
+  // the app's own output and the database server's own output: five files, and
+  // the whole reason the upload belongs to the job rather than to any one
+  // action.
+  expect(written).toHaveLength(5);
   expect(written.filter((file) => !path.includes(file))).toEqual([]);
 
-  // The run that failed on the way to a number is exactly the run whose partial
-  // evidence is worth having — and `!cancelled()` is not that condition: the
-  // runner marks the job cancelled when it hits its own `timeout-minutes`, so
-  // the step was skipped on exactly the runs that had spent fifteen minutes
-  // producing the evidence. This assertion used to hold the hole in place.
+  // The run that failed partway is exactly the run whose partial evidence is
+  // worth having — and `!cancelled()` is not that condition: the runner marks
+  // the job cancelled when it hits its own `timeout-minutes`, so the step was
+  // skipped on exactly the runs that had spent fifteen minutes producing the
+  // evidence. This assertion used to hold the hole in place.
   expect(textAt(upload, "if")).toBe("${{ always() }}");
   expect(textAt(mapAt(upload, "with"), "if-no-files-found")).toBe("ignore");
 });
 
-test("the app is booted with the instrument the coverage floor reads", () => {
-  const boot = stepsOf(serving)[0];
-  expect(textAt(boot, "name")).toBe("Boot against that database");
-  // Set only here: an instrument rather than a surface, and no deployment sets
-  // it. Without it the app serves no route log and the floor grades nothing.
-  expect(textAt(mapAt(boot, "env"), "ROUTE_LOG")).toBe("true");
+/**
+ * No step of CI runs a load test. Every file under the workflows and the
+ * actions is read, whatever its extension, because a load test can enter as a
+ * step of a workflow or as a script or loader beside an action it calls, and a
+ * file there that names either word has no reason to.
+ */
+test("no workflow and no action of this repo runs a load test", async () => {
+  const files = await Array.fromAsync(
+    new Bun.Glob("{workflows,actions}/**/*").scan({ cwd: join(root, ".github"), dot: true }),
+    (file) => `.github/${file}`,
+  );
+  expect(files).toContain(WRAPPER);
+  expect(files).toContain(".github/actions/db-serving/action.yml");
+
+  const mentioning: string[] = [];
+  for (const file of files) {
+    if (/\b(?:k6|capacity-ramp)\b/iu.test(await Bun.file(join(root, file)).text())) {
+      mentioning.push(file);
+    }
+  }
+  expect(mentioning).toEqual([]);
 });
 
 test("the probe step runs when either of its two inputs is set", () => {
@@ -129,24 +136,6 @@ test("the probe step runs when either of its two inputs is set", () => {
   // has to be selected for the gate to be able to say it.
   expect(when).toContain("probe-command");
   expect(when).toContain("probe-timeout");
-});
-
-test("the ramp's k6 is fetched by version and archive checksum", async () => {
-  // What this holds is the wiring and the pin, not the identity of the binary
-  // that arrives: `sha256sum` is itself found on PATH, so the checksum is a
-  // contract only while the search path is the one the calling job read. The
-  // case below is where that half is held.
-  const ramp = rampStep();
-  expect(textAt(ramp, "run")).toContain("k6.sh");
-
-  const fetcher = await Bun.file(`${root}/.github/actions/db-serving/k6.sh`).text();
-  // Version and archive checksum, the pair Renovate moves together: the version
-  // is a label and the SHA-256 is the contract.
-  expect(fetcher).toMatch(/^K6_VERSION=v\d+\.\d+\.\d+$/mu);
-  expect(fetcher).toMatch(/^K6_SHA256=[\da-f]{64}$/mu);
-  expect(fetcher).toContain("sha256sum -c -");
-  // The pin is only a pin while Renovate can find it.
-  expect(fetcher).toContain("renovate: datasource=github-release-attachments depName=grafana/k6");
 });
 
 test("the job hands the serving gate every input it declares, each under its own name", () => {
@@ -182,28 +171,13 @@ test("the job hands the serving gate every input it declares, each under its own
   expect(crossed).toEqual([]);
 });
 
-test("the floor is decided by the step that ramps, not by one behind it", () => {
-  // A step of its own runs under `success()`, so a ramp the failure bound
-  // refuses would skip it — and every route nothing reached would cost a CI
-  // round-trip that the measurement had already paid for. One step, one
-  // verdict: the two snapshots and the allowlist reach the same program.
-  const ramp = mapAt(rampStep(), "env");
-  expect(Object.keys(ramp)).toContain("INPUT_ROUTE_ALLOWLIST");
-  expect(Object.keys(ramp)).toContain("INPUT_ROUTE_LOG_BEFORE");
-  expect(Object.keys(ramp)).toContain("INPUT_ROUTE_LOG_AFTER");
-
-  // And nothing after it: the ramp is the last thing the action does.
-  expect(stepsOf(serving).at(-1)).toEqual(rampStep());
-});
-
 test("every step runs in the action's own checkout, under the interpreter and path its caller pinned", () => {
   // The three things a graded repo could otherwise choose about a gate that
   // runs inside its job: which `bunfig.toml` the interpreter reads on the way
-  // up, which `bun` that is, and which `curl`, `tar`, `sha256sum`, `setsid` and
-  // `bash` everything else resolves to. `serving-steps.test.ts` drives the
-  // shipped blocks against a checkout that fights back; this holds the
-  // declaration every one of them depends on, including for a step no case
-  // there can reach without spending a network fetch.
+  // up, which `bun` that is, and which `setsid` and `bash` everything else
+  // resolves to. `serving-steps.test.ts` drives the shipped blocks against a
+  // checkout that fights back; this holds the declaration every one of them
+  // depends on.
   for (const step of stepsOf(serving)) {
     const name = textAt(step, "name") ?? "(unnamed)";
     const env = mapAt(step, "env");

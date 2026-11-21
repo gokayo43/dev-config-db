@@ -26,12 +26,12 @@ import {
  */
 
 /** stdout, captured, the way the runner would read it. */
-async function written(run: () => void | Promise<void>): Promise<string[]> {
+function written(run: () => void): string[] {
   const lines: string[] = [];
   const log: typeof console.log = console.log.bind(console);
   console.log = (...parts: unknown[]) => void lines.push(parts.map(String).join(" "));
   try {
-    await run();
+    run();
   } finally {
     console.log = log;
   }
@@ -45,26 +45,26 @@ function commands(lines: readonly string[]): string[] {
   return lines.filter((line) => line.trimStart().startsWith("::"));
 }
 
-test("a newline in a problem cannot end the annotation and start a second command", async () => {
-  const lines = await written(async () => {
-    await publish({ problems: ["could not read `t`\n::stop-commands::deadbeef"] });
+test("a newline in a problem cannot end the annotation and start a second command", () => {
+  const lines = written(() => {
+    publish({ problems: ["could not read `t`\n::stop-commands::deadbeef"] });
   });
 
   expect(lines).toEqual(["::error::could not read `t`%0A::stop-commands::deadbeef"]);
   expect(commands(lines)).toHaveLength(1);
 });
 
-test("a carriage return and a percent are escaped the way GitHub decodes them", async () => {
-  const lines = await written(async () => {
-    await publish({ note: "100% done\rand back", problems: [] });
+test("a carriage return and a percent are escaped the way GitHub decodes them", () => {
+  const lines = written(() => {
+    publish({ note: "100% done\rand back", problems: [] });
   });
 
   expect(lines).toEqual(["::notice::100%25 done%0Dand back"]);
 });
 
-test("percent is escaped first, so an introduced escape is not escaped again", async () => {
-  const lines = await written(async () => {
-    await publish({ problems: ["a%0Ab\nc"] });
+test("percent is escaped first, so an introduced escape is not escaped again", () => {
+  const lines = written(() => {
+    publish({ problems: ["a%0Ab\nc"] });
   });
 
   // The literal `%0A` the message carried survives as `%250A`; the real newline
@@ -79,9 +79,9 @@ test("percent is escaped first, so an introduced escape is not escaped again", a
  * reaches the log as a line of its own. Indenting it does not help — whitespace
  * is exactly what the runner trims before it matches.
  */
-test("a dump line that is a workflow command reaches the log as text", async () => {
-  const lines = await written(async () => {
-    await publish({
+test("a dump line that is a workflow command reaches the log as text", () => {
+  const lines = written(() => {
+    publish({
       log: "the schema after a second replay, from line 2:\n  ::stop-commands::deadbeef",
       problems: ["replaying changed the schema"],
     });
@@ -105,8 +105,8 @@ test("a dump line that is a workflow command reaches the log as text", async () 
  * re-dumped as source text, so `select 'x\r::stop-commands::…'` survives
  * verbatim.
  */
-test("a bare carriage return inside a dump line does not smuggle a line past the margin", async () => {
-  const lines = await written(() => {
+test("a bare carriage return inside a dump line does not smuggle a line past the margin", () => {
+  const lines = written(() => {
     relay("  select 'x\r::stop-commands::deadbeef' as v");
   });
 
@@ -114,24 +114,20 @@ test("a bare carriage return inside a dump line does not smuggle a line past the
   expect(commands(lines)).toEqual([]);
 });
 
-test("a CRLF ends one line rather than two", async () => {
-  expect(await written(() => relay("first\r\nsecond"))).toEqual(["| first", "| second"]);
+test("a CRLF ends one line rather than two", () => {
+  expect(written(() => relay("first\r\nsecond"))).toEqual(["| first", "| second"]);
 });
 
-test("a trailing carriage return is a line ending too", async () => {
-  expect(await written(() => relay("only\r"))).toEqual(["| only"]);
+test("a trailing carriage return is a line ending too", () => {
+  expect(written(() => relay("only\r"))).toEqual(["| only"]);
 });
 
-test("relayed output keeps its shape, one line at a time", async () => {
-  expect(await written(() => relay("first\nsecond\nthird"))).toEqual([
-    "| first",
-    "| second",
-    "| third",
-  ]);
+test("relayed output keeps its shape, one line at a time", () => {
+  expect(written(() => relay("first\nsecond\nthird"))).toEqual(["| first", "| second", "| third"]);
 });
 
-test("a trailing newline is a line ending rather than an empty last line", async () => {
-  expect(await written(() => relay("only\n"))).toEqual(["| only"]);
+test("a trailing newline is a line ending rather than an empty last line", () => {
+  expect(written(() => relay("only\n"))).toEqual(["| only"]);
 });
 
 /**
@@ -139,75 +135,28 @@ test("a trailing newline is a line ending rather than an empty last line", async
  * stdout, GitHub decodes no escapes in it, and a percent run through it would
  * render as `%25` in the log a developer reads.
  */
-test("a percent in relayed output is left alone", async () => {
-  expect(await written(() => relay("100% applied"))).toEqual(["| 100% applied"]);
+test("a percent in relayed output is left alone", () => {
+  expect(written(() => relay("100% applied"))).toEqual(["| 100% applied"]);
 });
 
-test("the log goes out before the annotation that summarises it", async () => {
-  const lines = await written(async () => {
-    await publish({ log: "evidence", note: "a note", problems: ["a problem"] });
+test("the log goes out before the annotation that summarises it", () => {
+  const lines = written(() => {
+    publish({ log: "evidence", note: "a note", problems: ["a problem"] });
   });
 
   expect(lines).toEqual(["| evidence", "::notice::a note", "::error::a problem"]);
 });
 
-test("a verdict with no problems leaves the step green", async () => {
+test("a verdict with no problems leaves the step green", () => {
   const before = process.exitCode;
-  await written(async () => await publish({ note: "all well", problems: [] }));
+  written(() => publish({ note: "all well", problems: [] }));
   expect(process.exitCode).toBe(before);
 });
 
-test("every problem is annotated rather than only the first", async () => {
-  const lines = await written(async () => await publish({ problems: ["one", "two", "three"] }));
+test("every problem is annotated rather than only the first", () => {
+  const lines = written(() => publish({ problems: ["one", "two", "three"] }));
   expect(commands(lines)).toHaveLength(3);
   process.exitCode = 0;
-});
-
-/**
- * The run summary, which is where a measurement goes: an annotation is one line
- * on a step and a table is what a reader compares with the last run's. The two
- * cases are the whole of the contract — it is written for a run about to fail,
- * and a gate that builds one with nowhere to put it is a wiring fault rather
- * than a run.
- */
-test("a table is published before the annotations, including on the run that fails", async () => {
-  const into = join(tmpdir(), `summary-${Bun.randomUUIDv7()}.md`);
-  try {
-    const lines = await written(
-      async () =>
-        await publish({ table: "### Capacity\n", problems: ["half the requests failed"] }, into),
-    );
-
-    // A summary that appeared only on green runs would be missing from every
-    // run that needed one.
-    expect(await Bun.file(into).text()).toBe("### Capacity\n");
-    expect(commands(lines)).toEqual(["::error::half the requests failed"]);
-  } finally {
-    await rm(into, { force: true });
-    process.exitCode = 0;
-  }
-});
-
-test("a table with nowhere to go is a wiring fault, raised after what it found", async () => {
-  const lines: string[] = [];
-  const log: typeof console.log = console.log.bind(console);
-  console.log = (...parts: unknown[]) => void lines.push(parts.map(String).join(" "));
-  let refused: unknown;
-  try {
-    await publish({ table: "### Capacity\n", problems: ["a problem"] });
-  } catch (thrown) {
-    refused = thrown;
-  } finally {
-    console.log = log;
-    process.exitCode = 0;
-  }
-  expect(String(refused)).toContain("named no step summary");
-
-  // Raised after the annotations rather than before them: a step that died on
-  // the way to writing a table would otherwise lose every problem it had just
-  // found, and the failure would reach the log as a stack trace about a file
-  // path.
-  expect(commands(lines)).toEqual(["::error::a problem"]);
 });
 
 /**
@@ -215,8 +164,8 @@ test("a table with nowhere to go is a wiring fault, raised after what it found",
  * still a command carrying a value the gate did not write: the server step masks
  * the password out of the URL its calling job declared.
  */
-test("a masked value is escaped like every other message this file writes", async () => {
-  const lines = await written(() => {
+test("a masked value is escaped like every other message this file writes", () => {
+  const lines = written(() => {
     mask("p%ss\n::stop-commands::deadbeef");
   });
 
@@ -232,8 +181,8 @@ test("a masked value is escaped like every other message this file writes", asyn
  * replaces nothing, so asking is a line in every run's log that says the gate
  * tried to hide something it did not have.
  */
-test("the empty string is not masked at all", async () => {
-  expect(await written(() => mask(""))).toEqual([]);
+test("the empty string is not masked at all", () => {
+  expect(written(() => mask(""))).toEqual([]);
 });
 
 /**
@@ -268,9 +217,9 @@ test("a value carrying any line terminator is refused rather than written", asyn
   Bun.env["GITHUB_OUTPUT"] = file;
   try {
     for (const value of ["one\ntwo=three", "one\rtwo=three", "one\r\ntwo=three"]) {
-      // Caught rather than asserted on the promise, the way the table case
-      // above does: what a write that asked nothing of the value returns is a
-      // resolved promise, and `refused` staying undefined is what says so.
+      // Caught rather than asserted on the promise, because a write that asked
+      // nothing of the value returns a resolved promise, and `refused` staying
+      // undefined is what says so.
       let refused: unknown;
       try {
         await stepOutput("database-url", value);

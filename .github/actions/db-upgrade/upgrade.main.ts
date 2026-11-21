@@ -14,7 +14,7 @@ await entry(async () => {
     "this gate compares the schema an upgrade reaches against the one the replay built",
   );
 
-  await publish(
+  publish(
     await upgradeGate({
       // Named rather than inherited: this gate runs in the action's own
       // checkout, so the project is a path it is handed.

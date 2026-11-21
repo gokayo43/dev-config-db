@@ -50,9 +50,9 @@ test("an app that answers its health route boots, and is left running for the st
   expect(verdict.problems).toEqual([]);
   expect(verdict.note).toContain(url);
 
-  // The probe and the ramp run against this process in later steps. A boot step
-  // that took the app down with it would leave both of them with nothing, and
-  // the failure would surface two steps away from its cause.
+  // The probe runs against this process in a later step. A boot step that took
+  // the app down with it would leave the probe with nothing, and the failure
+  // would surface a step away from its cause.
   const still = await fetch(url, { signal: AbortSignal.timeout(5000) });
   expect(still.ok).toBe(true);
 });
@@ -80,9 +80,8 @@ test("an app that dies on the way up is refused by its exit, not by the bound", 
  * health URL is a port on a machine other things also listen on, and a 200 off
  * it says nothing about the process this step started. Here the stranger is
  * this case's own server and the start-command dies at once — so a gate that
- * polls the URL alone reports a boot, and the probe and twenty ramp VUs after
- * it are aimed at the stranger while the app that was supposed to be under
- * grade never ran.
+ * polls the URL alone reports a boot, and the probe after it is aimed at the
+ * stranger while the app that was supposed to be under grade never ran.
  */
 test("a 200 from something else on the box is not this app's boot", async () => {
   const root = await materialise({});

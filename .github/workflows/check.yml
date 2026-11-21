@@ -77,7 +77,7 @@ on:
           `external` runs this workflow's own database job — the repo's
           migrations replayed onto an empty database on the server it pinned,
           the upgrade path where it asks for one, the DATETIME catalogue, and
-          the app booted, probed and ramped against the result. It is
+          the app booted and probed against the result. It is
           dev-config's own spelling and its own value for exactly this: a
           workflow wrapping theirs runs the database gates in that job's place.
           `none` is a repo with no schema. `postgres` fails the run: the
@@ -137,15 +137,6 @@ on:
         type: string
         default: ""
       probe-timeout:
-        type: string
-        default: ""
-      capacity-script:
-        type: string
-        default: ""
-      capacity-path:
-        type: string
-        default: ""
-      route-allowlist:
         type: string
         default: ""
       datetime-allowlist:
@@ -237,9 +228,6 @@ jobs:
           HEALTH_URL: ${{ inputs['health-url'] }}
           PROBE_COMMAND: ${{ inputs['probe-command'] }}
           PROBE_TIMEOUT: ${{ inputs['probe-timeout'] }}
-          CAPACITY_SCRIPT: ${{ inputs['capacity-script'] }}
-          CAPACITY_PATH: ${{ inputs['capacity-path'] }}
-          ROUTE_ALLOWLIST: ${{ inputs['route-allowlist'] }}
           # The two defaults above, written out a second time because a step
           # cannot read an input's declared default. tests/refusals.test.ts
           # holds the pairs together; `changed_from_default` below is why they
@@ -293,16 +281,10 @@ jobs:
             "the probe runs against the app the database job boots"
           needs_job probe-timeout "$PROBE_TIMEOUT" \
             "it bounds a probe the database job runs"
-          needs_job capacity-script "$CAPACITY_SCRIPT" \
-            "the ramp runs against the app the database job boots"
-          needs_job capacity-path "$CAPACITY_PATH" \
-            "the ramp runs against the app the database job boots"
-          needs_job route-allowlist "$ROUTE_ALLOWLIST" \
-            "the route floor is measured across the database job's ramp"
           needs_job start-command "$START_COMMAND" \
             "it is how the database job's boot step starts the app"
           needs_job health-url "$HEALTH_URL" \
-            "it is what the database job's boot step polls and what its ramp measures"
+            "it is what the database job's boot step polls"
           needs_job datetime-allowlist "$DATETIME_ALLOWLIST" \
             "it waives columns the database job's DATETIME step grades"
           changed_from_default upgrade-gate "$UPGRADE_GATE" "$UPGRADE_GATE_DEFAULT" \
@@ -408,18 +390,16 @@ jobs:
       # A step writes $GITHUB_ENV and $GITHUB_PATH and the runner folds both
       # into the environment of every LATER step; a step output cannot be
       # rewritten once set. So a migrator that prepended a directory of its own
-      # would otherwise decide what `bun` and `docker` mean, and what `curl` and
-      # `sha256sum` mean to the ramp's pinned fetch — the gate's own code never
-      # executing, or its dumps taken by something that was never the server, or
-      # a "verified" k6 of that repo's choosing, and the step green in every
-      # case. The database is read the same way and one step later, because the
-      # port it is on is docker's answer rather than this file's: the server
-      # step below publishes it and answers with the URL, as an output nothing
-      # afterwards can rewrite. None of the three reaches a value captured
-      # before the graded repo ran. This is the same bar `_lib/annotations.ts`
-      # sets against `::stop-commands::` and `db-replay/database.ts` sets
-      # against a migrator's stdout: what the gate grades is not the graded
-      # repo's to decide.
+      # would otherwise decide what `bun` and `docker` mean — the gate's own
+      # code never executing, or its dumps taken by something that was never the
+      # server, and the step green in either case. The database is read the same
+      # way and one step later, because the port it is on is docker's answer
+      # rather than this file's: the server step below publishes it and answers
+      # with the URL, as an output nothing afterwards can rewrite. None of the
+      # three reaches a value captured before the graded repo ran. This is the
+      # same bar `_lib/annotations.ts` sets against `::stop-commands::` and
+      # `db-replay/database.ts` sets against a migrator's stdout: what the gate
+      # grades is not the graded repo's to decide.
       - id: pinned
         run: |
           {
@@ -432,7 +412,7 @@ jobs:
       # any one gate, and every step below connects to it. By full path and SHA
       # rather than `./` for the reason the steps below carry.
       - id: server
-        uses: gokayo43/dev-config-db/.github/actions/db-server@8f31436ba72d466c41509afacd70f0a7400ad5e7
+        uses: gokayo43/dev-config-db/.github/actions/db-server@4a5bdd2b3a1c900a260d6792501bd87939d2a0f7
         with:
           database-image: ${{ inputs['database-image'] }}
           # The account, the password and the database every gate in this job
@@ -505,7 +485,7 @@ jobs:
       # one value rather than two statements — the input — and
       # tests/wrapper-inputs.test.ts is what holds every step that takes an
       # image to it.
-      - uses: gokayo43/dev-config-db/.github/actions/db-replay@8f31436ba72d466c41509afacd70f0a7400ad5e7
+      - uses: gokayo43/dev-config-db/.github/actions/db-replay@4a5bdd2b3a1c900a260d6792501bd87939d2a0f7
         with:
           database-image: ${{ inputs['database-image'] }}
           database-url: ${{ steps.server.outputs['database-url'] }}
@@ -518,7 +498,7 @@ jobs:
       # upgrade reaches against the schema the replay just built. Its own
       # database, on the same server, dropped whichever way it goes.
       - if: inputs['upgrade-gate']
-        uses: gokayo43/dev-config-db/.github/actions/db-upgrade@8f31436ba72d466c41509afacd70f0a7400ad5e7
+        uses: gokayo43/dev-config-db/.github/actions/db-upgrade@4a5bdd2b3a1c900a260d6792501bd87939d2a0f7
         with:
           database-image: ${{ inputs['database-image'] }}
           database-url: ${{ steps.server.outputs['database-url'] }}
@@ -529,7 +509,7 @@ jobs:
       # migrations produced, so it needs the schema that step builds rather than
       # one written by hand. Its own pin, because an action and the workflow
       # pinning it are two commits — CLAUDE.md, "Releasing an action".
-      - uses: gokayo43/dev-config-db/.github/actions/db-datetime@8f31436ba72d466c41509afacd70f0a7400ad5e7
+      - uses: gokayo43/dev-config-db/.github/actions/db-datetime@4a5bdd2b3a1c900a260d6792501bd87939d2a0f7
         with:
           datetime-allowlist: ${{ inputs['datetime-allowlist'] }}
           database-url: ${{ steps.server.outputs['database-url'] }}
@@ -581,12 +561,11 @@ jobs:
           echo "PORT=$port" >> "$GITHUB_ENV"
 
       # Migrations applying says nothing about whether an app can run against
-      # what they built, a route table answering says nothing about whether any
-      # answer was right, and neither says anything about what the surface does
-      # under load. A step of this job rather than a job of its own, for the
-      # reason CONTEXT.md gives at "A database job". docs/gates/db-serving.md is
-      # the page.
-      - uses: gokayo43/dev-config-db/.github/actions/db-serving@8f31436ba72d466c41509afacd70f0a7400ad5e7
+      # what they built, and an app answering its health route says nothing
+      # about whether any answer was right. A step of this job rather than a job
+      # of its own, for the reason CONTEXT.md gives at "A database job".
+      # docs/gates/db-serving.md is the page.
+      - uses: gokayo43/dev-config-db/.github/actions/db-serving@4a5bdd2b3a1c900a260d6792501bd87939d2a0f7
         with:
           # start-command's default lives here, beside health-url's in the step
           # above, and for the reason that step gives: an input default is
@@ -597,9 +576,6 @@ jobs:
           health-url: ${{ steps.app.outputs['health-url'] }}
           probe-command: ${{ inputs['probe-command'] }}
           probe-timeout: ${{ inputs['probe-timeout'] }}
-          capacity-script: ${{ inputs['capacity-script'] }}
-          capacity-path: ${{ inputs['capacity-path'] }}
-          route-allowlist: ${{ inputs['route-allowlist'] }}
           bun: ${{ steps.pinned.outputs.bun }}
           path: ${{ steps.pinned.outputs.path }}
 
@@ -661,9 +637,9 @@ jobs:
       # name may be claimed once per run, and two actions publishing under the
       # caller's one name would be the second of them failing on the duplicate.
       #
-      # A step that failed on the way to a number is exactly when its partial
-      # evidence is worth having — the schema a run never got to compare, the
-      # summary of a ramp that died, the output of an app that never answered.
+      # A step that failed partway is exactly when its partial evidence is worth
+      # having — the schema a run never got to compare, the output of an app
+      # that never answered.
       # Reproducing any of them by re-running with more printing is the shape of
       # debugging every diagnostic here exists to avoid, so the files leave the
       # run whatever happened to it.
@@ -673,15 +649,14 @@ jobs:
       # is cancelled — and a job that hit its own `timeout-minutes` above is
       # cancelled — so `cancelled()` is true and the step is skipped. That is
       # precisely the run whose evidence is worth most: an app that never came
-      # up, or a ramp that wedged, spending the budget and then losing
+      # up, or a probe that wedged, spending the budget and then losing
       # everything it wrote. `always()` is the literal true this needs.
       #
-      # server.log is copied while the app still holds it open, which is not a
-      # race to fix: the ramp needs the process alive, so there is no moment
-      # where the file is finished and the run is not. Read its tail as possibly
-      # torn. The boot step's own annotation, not this file, is what says an app
-      # failed to start.
-      - name: Publish what this job built, measured and read
+      # server.log is copied while the app still holds it open: nothing ends the
+      # app before this step, and the runner reaps it at the end of the job.
+      # Read its tail as possibly torn. The boot step's own annotation, not this
+      # file, is what says an app failed to start.
+      - name: Publish what this job built and read
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -694,8 +669,5 @@ jobs:
             ${{ runner.temp }}/upgraded-from-base.schema
             ${{ runner.temp }}/server.log
             ${{ runner.temp }}/database-server.log
-            ${{ runner.temp }}/capacity.json
-            ${{ runner.temp }}/route-log-before.json
-            ${{ runner.temp }}/route-log-after.json
           # Each of these is written by a step that may not have been reached.
           if-no-files-found: ignore
