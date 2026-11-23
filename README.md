@@ -45,10 +45,11 @@ What such a runner has to provide, beyond those two labels:
   container a killed run left behind until the next run reclaims it.
   [docs/gates/db-server.md](docs/gates/db-server.md), "Where its data lives", is
   the measurement and the cap.
-- **Passwordless `sudo`**, for dev-config's test-suite gate inside the `static`
-  job — their
+- **bubblewrap, allowed to create a user namespace**, for dev-config's
+  test-suite gate inside the `static` job. Their
   [docs/gates/test-suite.md](https://github.com/gokayo43/dev-config/blob/main/docs/gates/test-suite.md)
-  is what it is for and what a runner without it gets.
+  says what the gate uses it for, what a runner without it gets, and what a
+  machine that restricts user namespaces needs. No sudoers line is needed.
 - **Room for a workspace that is not discarded when the run ends.** What cleans
   it is `actions/checkout` at the start of the next run.
 
@@ -139,8 +140,9 @@ rather than a service container.
 `ci-call` is part of the call rather than a shortcut: dev-config's repo contract
 asks a repo to call **dev-config's** `check.yml` at a pinned SHA, and a repo
 pointing at this workflow has that call one level down where the contract cannot
-read it. [dev-config#65](https://github.com/gokayo43/dev-config/issues/65) is
-where teaching the contract to see this workflow is argued.
+read it. [dev-config#65](https://github.com/gokayo43/dev-config/issues/65) asked
+for the contract to see this workflow and was closed as not planned, so
+`ci-call` stays part of the call.
 
 `ci-call` waives two rules of theirs, not one: that the CI workflow calls their
 `check.yml`, and that a repo declaring `lifecycle: "live"` asks its call for
@@ -248,12 +250,12 @@ this page has stopped accounting for.
 
 Every other input dev-config's `check.yml` declares is refused here rather than
 forwarded: `semantic-fixtures`, `timestamp-allowlist`, `backfill-seed`,
-`backfill-command`, `fuzz-seed`, `route-retire`, `route-allowlist`,
-`capacity-script` and `capacity-path`. Each is aimed at a step of the Postgres
-database job this workflow leaves off — theirs refuses all nine on a call
-passing `database: external`, so forwarding one would be this workflow sending a
-consumer a refusal from a job they never asked for — and the planned steps below
-are where this family answers the ones it needs.
+`backfill-command`, `fuzz-seed`, `route-retire` and `route-allowlist`. Each is
+aimed at a step of the Postgres database job this workflow leaves off — theirs
+refuses all seven on a call passing `database: external`, so forwarding one
+would be this workflow sending a consumer a refusal from a job they never asked
+for — and the planned steps below are where this family answers the ones it
+needs.
 
 `upgrade-gate` was on that list until dev-config stopped demanding its own
 upgrade gate of a caller passing `database: external`: the duty came here with
