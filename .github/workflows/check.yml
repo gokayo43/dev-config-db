@@ -168,7 +168,7 @@ permissions:
 
 jobs:
   static:
-    uses: gokayo43/dev-config/.github/workflows/check.yml@98aa12a02f1a3fe835db674c827d024d28779e00 # v0.75.1
+    uses: gokayo43/dev-config/.github/workflows/check.yml@6b30bf0b365decfbe0d503cb8a6cd1b7d1305bab # v0.78.1
     with:
       build: ${{ inputs.build }}
       build-cache: ${{ inputs['build-cache'] }}
@@ -459,7 +459,7 @@ jobs:
       # their host-key lookup is made with, the second is where GitHub publishes
       # those keys, and neither is a fact a consumer of this workflow has an
       # answer to.
-      - uses: gokayo43/dev-config/.github/actions/install@ebba5e24cb069d54fb0b3498560d7297cbb259d9 # v0.75.0
+      - uses: gokayo43/dev-config/.github/actions/install@c8bde9d4bbc3315d2337aa815c71893871528b5d # v0.78.0
         with:
           git-ssh-key: ${{ secrets['git-ssh-key'] }}
 
@@ -469,7 +469,7 @@ jobs:
       # build has run. Without it such a repo is refused for declaring no
       # migrations, which is a false answer to the question this gate asks.
       - if: inputs.build
-        uses: gokayo43/dev-config/.github/actions/build@ebba5e24cb069d54fb0b3498560d7297cbb259d9 # v0.75.0
+        uses: gokayo43/dev-config/.github/actions/build@c8bde9d4bbc3315d2337aa815c71893871528b5d # v0.78.0
         with:
           cache: ${{ inputs['build-cache'] }}
 

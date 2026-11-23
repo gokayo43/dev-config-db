@@ -248,12 +248,12 @@ this page has stopped accounting for.
 
 Every other input dev-config's `check.yml` declares is refused here rather than
 forwarded: `semantic-fixtures`, `timestamp-allowlist`, `backfill-seed`,
-`backfill-command`, `fuzz-seed`, `route-retire`, `route-allowlist`,
-`capacity-script` and `capacity-path`. Each is aimed at a step of the Postgres
-database job this workflow leaves off — theirs refuses all nine on a call
-passing `database: external`, so forwarding one would be this workflow sending a
-consumer a refusal from a job they never asked for — and the planned steps below
-are where this family answers the ones it needs.
+`backfill-command`, `fuzz-seed`, `route-retire` and `route-allowlist`. Each is
+aimed at a step of the Postgres database job this workflow leaves off — theirs
+refuses all seven on a call passing `database: external`, so forwarding one
+would be this workflow sending a consumer a refusal from a job they never asked
+for — and the planned steps below are where this family answers the ones it
+needs.
 
 `upgrade-gate` was on that list until dev-config stopped demanding its own
 upgrade gate of a caller passing `database: external`: the duty came here with
