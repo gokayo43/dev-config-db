@@ -256,7 +256,7 @@ gets trusted for things it never checked.
   sends the app more than the boot poll and the probe's own requests. A load
   measurement is dev-config's `capacity-ramp` command, run by hand, and
   [its page](https://github.com/gokayo43/dev-config/blob/main/docs/commands/capacity-ramp.md#where-you-may-point-it)
-  says in "Where you may point it" which targets a repo may ramp.
+  says which targets a repo may ramp.
 - **A second program in the repo.** The boot covers the program `start-command`
   starts and only that one: another app in the same repo is never started.
 - **A caller who passes `database-image` or `upgrade-gate` as exactly their
